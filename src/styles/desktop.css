@@ -1,0 +1,44 @@
+/* ===========================================
+   Desktop-Specific Styles (≥ 640px)
+   Loaded exclusively on desktop/tablet devices.
+   Page reloads on device change — no smooth transition needed.
+   =========================================== */
+
+:root {
+  /* Layout Dimensions - Desktop optimized */
+  --row-height: 40px;
+  --header-height: 45px;
+  --sidebar-width: 280px;
+  --sidebar-collapsed-width: 60px;
+
+  /* Typography - Desktop */
+  --ui-font-size: 14px;
+  --ui-font-size-sm: 12px;
+  --ui-font-size-xs: 11px;
+
+  /* Touch targets - relaxed for mouse input */
+  --touch-target-min: 32px;
+
+  /* Editor/input control height - compact for mouse/desktop density */
+  --editor-height: 34px;
+}
+
+/* Scrollbar - thin visible scrollbar on desktop */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 3px;
+}

@@ -1,0 +1,32 @@
+/*
+ * Cores das séries do gráfico de baleia, POR TEMA (dono, 2026-10-25: "passar em tudo" — WCAG 2.2 AA, 1.4.11).
+ *
+ * Previsto OLIVA (matiz 110°) e realizado AZUL (matiz 242°) — o par padrão, escolhido pelo dono (2026-10-25). Um SaaS
+ * pode sobrepor `--baleia-previsto` e `--baleia-realizado`, desde que meça contraste e daltonismo nos quatro temas. Cada série tem ao menos 3:1 contra a superfície do tema, e
+ * a hachura do previsto (opaca) tem 3:1 sobre o fundo dele a 10%; as séries não se tocam — o gráfico as separa com
+ * contorno na cor da superfície. A luminosidade de cada tom foi calculada para dar 3:1 na superfície de cada tema.
+ * Medido em 2026-10-25:
+ *
+ *   tema     previsto   realizado   previsto · hachura · realizado (contra a superfície / fundo do previsto)
+ *   light    #797700    #0078c0     4,72 · 4,16 · 4,72
+ *   dark     #999900    #1a9be5     4,88 · 4,27 · 4,84
+ *   amber    #999900    #1a9be5     5,14 · 4,44 · 5,10
+ *   cloudy   #a4a400    #23a0ea     3,40 · 3,01 · 3,14
+ *
+ * Daltonismo (validador da skill de gráficos), oliva × azul: ΔE 23,3 (claro), 25,6 (escuros) e 26,0 (cloudy) — o
+ * mínimo é 8; tritanopia 12,8–14,9; visão normal 24–28. Amarelo × azul é o eixo que protanopia e deuteranopia
+ * preservam. O cloudy tem superfície cinza MÉDIA: a folga ali é pequena e os tons saem da faixa de luminosidade que a
+ * skill recomenda para fundo escuro (0,48–0,67 OKLCH), sem prejuízo de contraste.
+ * O status dos semáforos é lido pela FORMA (check, triângulo, octógono), não pela cor das séries.
+ * O tema "custom" (cores do assinante) cai no par claro ou no escuro conforme o color-scheme.
+ */
+
+:root {
+  --baleia-previsto: light-dark(#797700, #999900);
+  --baleia-realizado: light-dark(#0078c0, #1a9be5);
+}
+
+html[data-theme="cloudy"] {
+  --baleia-previsto: #a4a400;
+  --baleia-realizado: #23a0ea;
+}

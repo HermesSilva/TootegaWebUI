@@ -1,0 +1,34 @@
+/* ===========================================
+   Mobile-Specific Styles (< 640px)
+   Loaded exclusively on mobile devices.
+   Page reloads on device change — no smooth transition needed.
+   =========================================== */
+
+:root {
+  /* Layout Dimensions - Mobile optimized for touch */
+  --row-height: 48px;
+  --header-height: 42px;
+  --sidebar-width: 100vw;
+  --sidebar-collapsed-width: 0px;
+
+  /* Typography - Larger for mobile readability */
+  --ui-font-size: 15px;
+  --ui-font-size-sm: 14px;
+  --ui-font-size-xs: 13px;
+
+  /* Touch targets - strict 44px minimum (WCAG/Apple HIG) */
+  --touch-target-min: 44px;
+
+  /* Editor/input control height - meets touch minimum on mobile */
+  --editor-height: 44px;
+}
+
+/* Scrollbar - hidden on mobile (touch scrolling) */
+.scrollbar-thin {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  display: none;
+}

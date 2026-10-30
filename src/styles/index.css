@@ -1,0 +1,475 @@
+/* Tailwind v4: entrada única substitui as diretivas @tailwind base/components/utilities. */
+@import "tailwindcss";
+/* Config legado em JS (cores CSS-var, breakpoints por device, plugin addVariant) via @config — o
+   design system do motor, que mora no próprio Core (dono, 2026-10-23). Caminho relativo a este
+   arquivo: Core/src/styles → Core/tailwind.config.js. */
+@config "../../tailwind.config.js";
+
+/* Dark Reader protection */
+html[data-darkreader-mode="disabled"],
+html[data-darkreader-mode="disabled"] body,
+html[data-darkreader-mode="disabled"] * {
+  --darkreader-neutral-background: initial !important;
+  --darkreader-neutral-text: initial !important;
+  --darkreader-selection-background: initial !important;
+  --darkreader-selection-text: initial !important;
+}
+
+/* ===========================================
+   Design System Tokens (Source of Truth)
+   Device-specific overrides in desktop.css / mobile.css
+   Theme overrides via [data-theme] attribute on <html>
+   =========================================== */
+
+/* ===========================================
+   Theme: Light (default)
+   =========================================== */
+:root,
+html[data-theme="light"] {
+  /* Brand Colors (HSL for Tailwind alpha support) */
+  --brand-primary: 217 91% 60%;
+  --brand-primary-light: 217 91% 70%;
+  --brand-primary-dark: 221 83% 53%;
+  --brand-background: 216 28% 95%;
+  --brand-surface: 0 0% 100%;
+
+  /* Text */
+  --text-primary: 215 25% 17%;
+  --text-secondary: 215 16% 47%;
+  --text-muted: 215 14% 63%;
+
+  /* Borders */
+  --border-color: 214 32% 88%;
+  --border-light: 220 13% 94%;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  /* Popover / Tour surfaces */
+  --popover-bg: 0 0% 100%;
+  --popover-border: 214 32% 91%;
+  --popover-footer-bg: 216 28% 95%;
+
+  /* Scrollbar */
+  --scrollbar-thumb: #CBD5E1;
+
+  /* Status */
+  --danger: 0 84% 60%;
+  --danger-bg: 0 86% 97%;
+  --success: 142 71% 45%;
+  --success-bg: 142 76% 95%;
+  --warning: 38 92% 50%;
+  --warning-bg: 48 96% 95%;
+  --info: 217 91% 60%;
+  --info-bg: 214 95% 95%;
+
+  /* Interactive states */
+  --hover: 220 14% 92%;
+  --active: 220 14% 86%;
+  --muted-bg: 216 22% 91%;
+
+  /* Painel flutuante (XHint): a sombra desenha com a cor OPOSTA à superfície. Em tema claro é o
+     vulto escuro clássico; em tema escuro (abaixo) é um halo de luz — sombra preta sobre fundo
+     escuro não se vê. Contorno de 1px + halo curto + halo largo difuso. */
+  --hint-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.06),
+    0 2px 8px rgb(0 0 0 / 0.08),
+    0 12px 32px -8px rgb(0 0 0 / 0.18);
+  --hint-border: 0 0% 0%;
+  --hint-border-alpha: 0.10;
+  --hint-inset: 0 0% 0%;
+
+  color-scheme: light;
+}
+
+/* ===========================================
+   Theme: Cloudy
+   Mid-tone overcast — noticeably darker than Light,
+   blue-gray surfaces with reduced contrast
+   =========================================== */
+html[data-theme="cloudy"] {
+  --brand-primary: 220 65% 58%;
+  --brand-primary-light: 220 55% 68%;
+  --brand-primary-dark: 224 60% 50%;
+  --brand-background: 220 16% 22%;
+  --brand-surface: 220 14% 30%;
+
+  --text-primary: 220 20% 92%;
+  --text-secondary: 220 12% 68%;
+  --text-muted: 220 10% 52%;
+
+  --border-color: 220 14% 36%;
+  --border-light: 220 12% 26%;
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.2);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.25), 0 2px 4px -2px rgb(0 0 0 / 0.2);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.25);
+
+  --popover-bg: 220 14% 30%;
+  --popover-border: 220 14% 36%;
+  --popover-footer-bg: 220 16% 22%;
+
+  --scrollbar-thumb: #64748B;
+
+  --danger: 0 72% 60%;
+  --danger-bg: 0 40% 22%;
+  --success: 142 60% 50%;
+  --success-bg: 142 30% 20%;
+  --warning: 38 80% 55%;
+  --warning-bg: 38 35% 20%;
+  --info: 217 80% 65%;
+  --info-bg: 217 35% 22%;
+
+  /* Interactive states */
+  --hover: 220 14% 35%;
+  --active: 220 14% 40%;
+  --muted-bg: 220 15% 25%;
+
+  /* Sombra CLARA: sobre superfície escura, o que separa o painel do fundo é a luz, não o vulto. */
+  --hint-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.12),
+    0 2px 8px rgb(255 255 255 / 0.10),
+    0 12px 32px -8px rgb(255 255 255 / 0.18);
+  --hint-border: 0 0% 100%;
+  --hint-border-alpha: 0.20;
+  --hint-inset: 0 0% 100%;
+
+  color-scheme: dark;
+}
+
+/* ===========================================
+   Theme: Dark
+   True dark mode — dark surfaces, light text
+   =========================================== */
+html[data-theme="dark"] {
+  --brand-primary: 217 91% 65%;
+  --brand-primary-light: 217 85% 75%;
+  --brand-primary-dark: 221 90% 58%;
+  --brand-background: 222 47% 10%;
+  --brand-surface: 217 33% 17%;
+
+  --text-primary: 210 40% 98%;
+  --text-secondary: 215 20% 65%;
+  --text-muted: 215 15% 50%;
+
+  --border-color: 217 25% 24%;
+  --border-light: 217 20% 18%;
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.4);
+
+  --popover-bg: 217 33% 17%;
+  --popover-border: 217 25% 25%;
+  --popover-footer-bg: 222 47% 10%;
+
+  --scrollbar-thumb: #475569;
+
+  --danger: 0 84% 65%;
+  --danger-bg: 0 50% 18%;
+  --success: 142 60% 55%;
+  --success-bg: 142 35% 18%;
+  --warning: 38 85% 58%;
+  --warning-bg: 38 40% 18%;
+  --info: 217 85% 68%;
+  --info-bg: 217 40% 20%;
+
+  /* Interactive states */
+  --hover: 217 25% 22%;
+  --active: 217 25% 28%;
+  --muted-bg: 217 22% 13%;
+
+  /* Sombra CLARA: sobre superfície escura, o que separa o painel do fundo é a luz, não o vulto. */
+  --hint-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.12),
+    0 2px 8px rgb(255 255 255 / 0.10),
+    0 12px 32px -8px rgb(255 255 255 / 0.18);
+  --hint-border: 0 0% 100%;
+  --hint-border-alpha: 0.20;
+  --hint-inset: 0 0% 100%;
+
+  color-scheme: dark;
+}
+
+/* ===========================================
+   Theme: Amber
+   Warm amber/sepia tones — earthy dark palette
+   inspired by candlelight and aged paper
+   =========================================== */
+html[data-theme="amber"] {
+  --brand-primary: 30 85% 55%;
+  --brand-primary-light: 32 80% 65%;
+  --brand-primary-dark: 25 90% 45%;
+  --brand-background: 20 30% 8%;
+  --brand-surface: 22 25% 14%;
+
+  --text-primary: 35 40% 90%;
+  --text-secondary: 30 20% 65%;
+  --text-muted: 25 15% 48%;
+
+  --border-color: 22 20% 22%;
+  --border-light: 20 18% 17%;
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.35);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.4);
+
+  --popover-bg: 22 25% 14%;
+  --popover-border: 22 20% 22%;
+  --popover-footer-bg: 20 30% 9%;
+
+  --scrollbar-thumb: #8B6F47;
+
+  --danger: 0 70% 58%;
+  --danger-bg: 0 40% 16%;
+  --success: 142 55% 48%;
+  --success-bg: 142 30% 15%;
+  --warning: 38 75% 52%;
+  --warning-bg: 38 30% 15%;
+  --info: 30 80% 60%;
+  --info-bg: 25 30% 18%;
+
+  /* Interactive states */
+  --hover: 22 20% 18%;
+  --active: 22 20% 22%;
+  --muted-bg: 22 20% 10%;
+
+  /* Sombra CLARA: sobre superfície escura, o que separa o painel do fundo é a luz, não o vulto. */
+  --hint-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.12),
+    0 2px 8px rgb(255 255 255 / 0.10),
+    0 12px 32px -8px rgb(255 255 255 / 0.18);
+  --hint-border: 0 0% 100%;
+  --hint-border-alpha: 0.20;
+  --hint-inset: 0 0% 100%;
+
+  color-scheme: dark;
+}
+
+/* ===========================================
+   Theme: Custom
+   Base fallback — identical to Light.
+   Actual values are applied via inline styles
+   by themeService.ts applyCustomColors().
+   =========================================== */
+html[data-theme="custom"] {
+  --brand-primary: 217 91% 60%;
+  --brand-primary-light: 217 91% 70%;
+  --brand-primary-dark: 221 83% 53%;
+  --brand-background: 216 28% 95%;
+  --brand-surface: 0 0% 100%;
+
+  --text-primary: 215 25% 17%;
+  --text-secondary: 215 16% 47%;
+  --text-muted: 215 14% 63%;
+
+  --border-color: 214 32% 88%;
+  --border-light: 220 13% 94%;
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  --popover-bg: 0 0% 100%;
+  --popover-border: 214 32% 88%;
+  --popover-footer-bg: 216 28% 95%;
+
+  --scrollbar-thumb: #CBD5E1;
+
+  --danger: 0 84% 60%;
+  --danger-bg: 0 86% 97%;
+  --success: 142 71% 45%;
+  --success-bg: 142 76% 95%;
+  --warning: 38 92% 50%;
+  --warning-bg: 48 96% 95%;
+  --info: 217 91% 60%;
+  --info-bg: 214 95% 95%;
+
+  --hover: 220 14% 92%;
+  --active: 220 14% 86%;
+  --muted-bg: 216 22% 91%;
+
+  /* Painel flutuante (XHint): a sombra desenha com a cor OPOSTA à superfície. Em tema claro é o
+     vulto escuro clássico; em tema escuro (abaixo) é um halo de luz — sombra preta sobre fundo
+     escuro não se vê. Contorno de 1px + halo curto + halo largo difuso. */
+  --hint-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.06),
+    0 2px 8px rgb(0 0 0 / 0.08),
+    0 12px 32px -8px rgb(0 0 0 / 0.18);
+  --hint-border: 0 0% 0%;
+  --hint-border-alpha: 0.10;
+  --hint-inset: 0 0% 0%;
+
+  color-scheme: light;
+}
+
+/* ===========================================
+   Shared Layout Tokens (not theme-dependent)
+   Overridden by desktop.css / mobile.css
+   =========================================== */
+:root {
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Layout (defaults — overridden by desktop.css / mobile.css) */
+  --row-height: 44px;
+  --header-height: 48px;
+  --sidebar-width: 280px;
+  --sidebar-collapsed-width: 60px;
+  --touch-target-min: 44px;
+  --editor-height: 34px;
+  --ui-font-size: 14px;
+  --ui-font-size-sm: 13px;
+  --ui-font-size-xs: 12px;
+}
+
+/* ===========================================
+   Base Layer
+   =========================================== */
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-brand-background text-brand-text-primary antialiased text-ui;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* ===========================================
+   Component Layer
+   =========================================== */
+@layer components {
+  .input-field {
+    @apply w-full px-3 py-2 text-ui border border-border rounded-lg bg-brand-surface
+           focus:outline-none focus:ring-2 focus:ring-brand-primary focus:border-transparent
+           placeholder:text-brand-text-muted transition-all duration-200;
+  }
+
+  .card {
+    @apply bg-brand-surface rounded-xl shadow-sm border border-border-light;
+  }
+
+  /* MOLDURA DE TODO DIÁLOGO (dono, 2026-10-25): formulário de App, picker, confirmação, mensagem, conta.
+     Borda de 2px um pouco mais clara que o fundo do cartão — a mistura com a cor do texto faz isso em
+     QUALQUER tema: no escuro a borda clareia, no claro (fundo já branco) escurece de leve, que é o único
+     contraste possível — e um brilho discreto na cor da marca, que destaca o diálogo do que fica atrás.
+     Na camada de componentes de propósito: a cor de borda de uma mensagem (aviso, erro), declarada como
+     utilitário, continua vencendo. Redimensionar e arrastar: hook `useMolduraDeModal`. */
+  .x-moldura-modal {
+    border-width: 2px;
+    border-style: solid;
+    border-color: color-mix(in oklab, hsl(var(--brand-surface)) 80%, hsl(var(--text-primary)));
+    box-shadow:
+      0 0 0 1px hsl(var(--brand-primary) / 0.10),
+      0 0 24px 2px hsl(var(--brand-primary) / 0.16),
+      0 25px 50px -12px rgb(0 0 0 / 0.45);
+  }
+
+  /* Cartão REDIMENSIONADO pelo usuário (ou restaurado do perfil): a altura agora é dele, e o conteúdo que
+     não couber ROLA dentro do cartão (dono, 2026-10-25). O corpo marcado com `data-corpo-do-modal` larga a
+     altura calculada pelo modelo (e o piso que evita "pular" entre abas) e passa a ceder; cartão sem corpo
+     marcado rola inteiro. Só o filho DIRETO: um diálogo aninhado dentro do corpo não é atingido. */
+  .x-moldura-modal[data-redimensionado] > [data-corpo-do-modal] {
+    flex: 1 1 0% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+  }
+
+  .x-moldura-modal[data-redimensionado]:not(:has(> [data-corpo-do-modal])) {
+    overflow: auto;
+  }
+
+  .dropdown-item {
+    @apply w-full px-3 py-2 text-ui text-left text-brand-text-primary hover:bg-brand-background 
+           transition-colors duration-150 flex items-center gap-2;
+  }
+}
+
+/* ===========================================
+   Utility Layer
+   =========================================== */
+@layer utilities {
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Animations */
+  .animate-in {
+    animation-duration: 150ms;
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+    animation-fill-mode: both;
+  }
+
+  .fade-in {
+    animation-name: fadeIn;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  /* PWA Notification Animations */
+  .animate-slide-up {
+    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .animate-slide-down {
+    animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Password Strength Dropdown Animations */
+  .animate-check-pop {
+    animation: checkPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+
+  @keyframes checkPop {
+    0% {
+      opacity: 0;
+      transform: scale(0);
+    }
+    50% {
+      transform: scale(1.3);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+}

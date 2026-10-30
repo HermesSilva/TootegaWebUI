@@ -1,0 +1,50 @@
+name: CI
+
+# Integração contínua do Tootega WebUI — o motor do front (@Tootega/core), repositório próprio desde
+# 2026-10-30 (D56). Um job só: instala e TIPA o motor, sozinho.
+#
+# O QUE ESTE CI PROVA, E O QUE NÃO PROVA. Ele tipa o motor SEM SaaS nenhum ao lado — é a prova de que nada aqui
+# depende de um App. NÃO roda teste de componente: eles moram na suíte do App de cada SaaS (é ela que garante
+# uma cópia só do React e alimenta a catraca de cobertura do SaaS), e é o CI do SaaS que faz checkout deste
+# repositório em ./TootegaWebUI e compila o App contra ele.
+#
+# Roda em todo push, de qualquer branch, em PR para master e por acionamento manual — mesmo critério do CI do
+# ERP e do TootegaCore (dono, 2026-09-15). Não publica nada.
+
+on:
+  push:
+    # SO BRANCH, NUNCA TAG (dono, 2026-10-25): o push da tag de release disparava um segundo CI sobre o mesmo
+    # commit. Com `branches` declarado e sem `tags`, o GitHub ignora o push de tag.
+    branches: ['**']
+    paths-ignore:
+      - '**/*.md'
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  typecheck:
+    name: Typecheck WebUI
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Verify Node.js installation
+        shell: bash
+        run: node --version && npm --version
+
+      # A prova de independência: sem App ao lado, o motor tem de tipar com o que é dele.
+      - name: Garantir que nenhum SaaS esta ao lado
+        shell: bash
+        run: |
+          if [ -d ../Front/App ]; then
+            echo "::error::Achei ../Front/App: este build deixaria de provar que o motor tipa sozinho."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck

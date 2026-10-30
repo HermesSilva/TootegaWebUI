@@ -1,0 +1,34 @@
+# --- Dependências / build ---
+node_modules/
+dist/
+coverage/
+# Saída do `tsc` com `composite: true` (o tsconfig declara `noEmit`, mas o tsbuildinfo é gravado assim mesmo).
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# --- IDE ---
+.vs/
+.vscode-test/
+.idea/
+*.user
+*.suo
+*.swp
+*.swo
+
+# --- Ambiente local (override não-versionado do Vite) ---
+.env.local
+.env.*.local
+
+# --- Logs / sistema ---
+*.log
+.DS_Store
+Thumbs.db
+
+# --- Certificados / segredos ---
+*.pfx
+*.p12
+*.pem
+*.key
+
+# Config pessoal do Claude Code (permissões locais da máquina) — não versionar
+.claude/settings.local.json
