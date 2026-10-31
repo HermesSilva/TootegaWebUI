@@ -16,7 +16,7 @@ const INLINE = new RegExp(
     String.raw`(\x60\x60[^\x60]+\x60\x60|(?<![\p{L}\p{N}_])\x60(?!\s)[^\x60\n]*?(?<!\s)\x60(?![\p{L}\p{N}_]))`, // 4 mono
     String.raw`(##[^#]+##|(?<![\p{L}\p{N}_])#(?!\s)[^#\n]*?(?<!\s)#(?![\p{L}\p{N}_]))`, // 5 realce
     String.raw`(\[[^\]]+\]#)`, // 6 papel
-    String.raw`((?:image|link|xref|mailto|footnote|kbd|btn|menu|pass|anchor|icon|include):[^\[\s]*\[[^\]]*\])`, // 7 macro
+    String.raw`((?:image|link|xref|mailto|footnote|kbd|btn|menu|pass|anchor|icon|include|stem|latexmath|asciimath):[^\[\s]*\[[^\]]*\])`, // 7 macro
     String.raw`((?:https?|ftp|irc|file):\/\/[^\s\[\]<>]+(?:\[[^\]]*\])?)`, // 8 url
     String.raw`(<<[^>]+>>|\[\[[^\]]+\]\])`, // 9 referência/âncora
     String.raw`(\{[A-Za-z0-9_][A-Za-z0-9_-]*\})`, // 10 atributo
