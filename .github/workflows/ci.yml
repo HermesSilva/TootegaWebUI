@@ -1,12 +1,13 @@
 name: CI
 
 # Integração contínua do Tootega WebUI — o motor do front (@Tootega/core), repositório próprio desde
-# 2026-10-30 (D56). Um job só: instala e TIPA o motor, sozinho.
+# 2026-10-30 (D56). Um job só: instala, TIPA e roda os testes PUROS do motor, sozinho.
 #
 # O QUE ESTE CI PROVA, E O QUE NÃO PROVA. Ele tipa o motor SEM SaaS nenhum ao lado — é a prova de que nada aqui
-# depende de um App. NÃO roda teste de componente: eles moram na suíte do App de cada SaaS (é ela que garante
-# uma cópia só do React e alimenta a catraca de cobertura do SaaS), e é o CI do SaaS que faz checkout deste
-# repositório em ./TootegaWebUI e compila o App contra ele.
+# depende de um App. Os testes daqui (src/__tests__) são os que NÃO renderizam React: parser, serializador e
+# transações do editor AsciiDoc, tokenizador, utilitários puros. Teste de COMPONENTE mora na suíte do App de
+# cada SaaS (é ela que garante uma cópia só do React e alimenta a catraca de cobertura do SaaS); o CI do SaaS
+# faz checkout deste repositório em ./TootegaWebUI, compila o App contra ele e roda os testes daqui também.
 #
 # Roda em todo push, de qualquer branch, em PR para master e por acionamento manual — mesmo critério do CI do
 # ERP e do TootegaCore (dono, 2026-09-15). Não publica nada.
@@ -24,7 +25,7 @@ on:
 
 jobs:
   typecheck:
-    name: Typecheck WebUI
+    name: Typecheck + testes puros
     runs-on: self-hosted
     steps:
       - name: Checkout
@@ -48,3 +49,6 @@ jobs:
 
       - name: Type check
         run: npm run typecheck
+
+      - name: Testes puros do motor
+        run: npm test

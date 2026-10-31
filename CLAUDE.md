@@ -32,8 +32,9 @@ repositório aberto sozinho.
 
 ## 2. Build e validação
 
-- **Validação do assistente = só tipagem:** `npm run typecheck` (é o que o CI faz). Teste de componente do motor
-  mora na suíte do App do SaaS (`Front/App/src/__tests__/core/...` no ERP) — **não** se cria `*.test.tsx` aqui.
+- **Validação do assistente = tipagem:** `npm run typecheck` (é o que o CI faz, mais `npm test`). Teste **puro**
+  (sem React) mora aqui em `src/__tests__` e roda com `npm test`; teste de **componente** do motor mora na suíte
+  do App do SaaS (`Front/App/src/__tests__/core/...` no ERP) — **não** se cria `*.test.tsx` aqui.
 - **Teste só a pedido do dono ou quando a tarefa é de teste**; e aí se roda no App, filtrado ao que mudou
   (`npm test -- <arquivo>` em `Front/App`).
 - Mudou caminho, nome de pacote ou export público ⇒ o App do SaaS quebra: ajuste e valide lá (`npx tsc -b` em

@@ -45,8 +45,10 @@ três é o SaaS.
    entram pela detecção automática do Tailwind v4.
 5. **Ativos que o SaaS serve:** o motor usa `/icons/jaci.svg` (avatar da Jaci) por URL; o `public/icons` do App
    precisa tê-lo. Os ícones deste repositório (`public/icons`) entram na imagem do front do SaaS.
-6. **Testes de componente do motor moram na suíte do App** (é ela que garante uma cópia só de React e alimenta
-   a catraca de cobertura do SaaS). Este repositório só tipa (`npm run typecheck`).
+6. **Testes:** os que NÃO renderizam React (parser, serializador e transações do AsciiDoc, tokenizador,
+   utilitários puros) moram aqui, em `src/__tests__`, e rodam com `npm test`; o vitest do App do SaaS aponta um
+   projeto para esta raiz e os conta na catraca de cobertura dele. **Teste de componente** (que renderiza React)
+   mora na suíte do App do SaaS, que é quem garante uma cópia só de React.
 7. **CI/CD do SaaS:** `actions/checkout` deste repositório em `./TootegaWebUI` antes do `npm ci` do App. O
    repositório é privado e o `GITHUB_TOKEN` de um repositório não lê outro: cada SaaS cadastra aqui uma
    **deploy key só-leitura** e guarda a chave privada num secret dele (no ERP, `TOOTEGAWEBUI_DEPLOY_KEY`; a
@@ -58,10 +60,11 @@ três é o SaaS.
 ```
 npm ci
 npm run typecheck
+npm test
 ```
 
-É o que o CI deste repositório faz (`.github/workflows/ci.yml`): prova que o motor tipa **sem SaaS nenhum ao
-lado**. Se tipar aqui e quebrar no SaaS, o defeito é do App; se quebrar aqui, algo do motor passou a depender do
+É o que o CI deste repositório faz (`.github/workflows/ci.yml`): prova que o motor tipa e passa nos testes puros
+**sem SaaS nenhum ao lado**. Se tipar aqui e quebrar no SaaS, o defeito é do App; se quebrar aqui, algo do motor passou a depender do
 que só o SaaS tem.
 
 ## Layout
