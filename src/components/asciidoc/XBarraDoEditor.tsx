@@ -2,6 +2,7 @@
  * XBarraDoEditor — a barra de ferramentas do editor AsciiDoc, em grupos: histórico, tipo de bloco, formatação,
  * listas, inserção, tabela, ferramentas e modo. Todo botão tem nome acessível, dica e atalho; o estado da seleção
  * sai por `aria-pressed`. Os botões não roubam o foco do editor (`onMouseDown` previne o padrão).
+ * Os textos vêm do catálogo (`useTextos`), pt-BR por padrão.
  */
 
 import { type JSX, type ReactNode } from 'react';
@@ -48,6 +49,7 @@ import { IconButton } from '../ui/IconButton';
 import { XMenuSuspenso } from '../painel/elementos/XMenuSuspenso';
 import type { EstiloDeLista, TipoDeMarca } from './modelo/tipos';
 import type { TipoDeBlocoDeTexto } from './editor/transacoes';
+import { useTextos } from './textos';
 
 // ============================================================================
 // Tipos
@@ -85,6 +87,7 @@ export type ComandoDaBarra =
   | 'inserir:sumario'
   | 'inserir:atributo'
   | 'inserir:comentario'
+  | 'inserir:formula'
   | 'tabela:linhaAntes'
   | 'tabela:linhaDepois'
   | 'tabela:colunaAntes'
@@ -163,55 +166,45 @@ function Botao({ rotulo, dica, atalho, icone, ligado = false, desabilitado = fal
   );
 }
 
-const ROTULO_DO_BLOCO: Record<TipoDeBlocoDeTexto, string> = {
-  paragrafo: 'Parágrafo',
-  titulo1: 'Título 1',
-  titulo2: 'Título 2',
-  titulo3: 'Título 3',
-  titulo4: 'Título 4',
-  titulo5: 'Título 5',
-  literal: 'Literal',
-  citacao: 'Citação',
-  codigo: 'Código',
-};
-
 // ============================================================================
 // A barra
 // ============================================================================
 
 export function XBarraDoEditor({ modo, aoMudarModo, podeDesfazer, podeRefazer, aoDesfazer, aoRefazer, estado, aoComando, somenteLeitura, estruturaAberta, aoAlternarEstrutura, formatacaoAtiva }: XBarraDoEditorProps): JSX.Element {
+  const textos = useTextos();
+  const t = textos.barra;
   const inativo = somenteLeitura || !formatacaoAtiva;
   const marca = (pTipo: TipoDeMarca): boolean => estado.marcas.has(pTipo);
 
   return (
-    <div className="adc-barra" role="toolbar" aria-label="Ferramentas do editor AsciiDoc">
-      <Grupo rotulo="Histórico">
-        <Botao rotulo="Desfazer" atalho="Ctrl+Z" icone={<Undo2 size={16} />} desabilitado={somenteLeitura || !podeDesfazer} aoClicar={aoDesfazer} />
-        <Botao rotulo="Refazer" atalho="Ctrl+Y" icone={<Redo2 size={16} />} desabilitado={somenteLeitura || !podeRefazer} aoClicar={aoRefazer} />
+    <div className="adc-barra" role="toolbar" aria-label={t.rotulo}>
+      <Grupo rotulo={t.historico}>
+        <Botao rotulo={t.desfazer} atalho="Ctrl+Z" icone={<Undo2 size={16} />} desabilitado={somenteLeitura || !podeDesfazer} aoClicar={aoDesfazer} />
+        <Botao rotulo={t.refazer} atalho="Ctrl+Y" icone={<Redo2 size={16} />} desabilitado={somenteLeitura || !podeRefazer} aoClicar={aoRefazer} />
       </Grupo>
 
-      <Grupo rotulo="Tipo de bloco">
+      <Grupo rotulo={t.tipoDeBloco}>
         <XMenuSuspenso
           gatilho={
             <span className="adc-barra-gatilho">
               <Pilcrow size={14} aria-hidden="true" />
-              <span>{estado.tipoDeBloco ? ROTULO_DO_BLOCO[estado.tipoDeBloco] : 'Bloco'}</span>
+              <span>{estado.tipoDeBloco ? t.blocos[estado.tipoDeBloco] : t.bloco}</span>
               <ChevronDown size={12} aria-hidden="true" />
             </span>
           }
-          rotuloAcessivel="Tipo de bloco"
+          rotuloAcessivel={t.tipoDeBloco}
           classeDoGatilho={`adc-barra-seletor${inativo ? ' adc-barra-seletor-inativo' : ''}`}
           selecionada={estado.tipoDeBloco ?? undefined}
           opcoes={[
-            { id: 'paragrafo', rotulo: 'Parágrafo', detalhe: 'Ctrl+Shift+0' },
-            { id: 'titulo1', rotulo: 'Título 1', detalhe: 'Ctrl+Shift+1' },
-            { id: 'titulo2', rotulo: 'Título 2', detalhe: 'Ctrl+Shift+2' },
-            { id: 'titulo3', rotulo: 'Título 3', detalhe: 'Ctrl+Shift+3' },
-            { id: 'titulo4', rotulo: 'Título 4', detalhe: 'Ctrl+Shift+4' },
-            { id: 'titulo5', rotulo: 'Título 5', detalhe: 'Ctrl+Shift+5' },
-            { id: 'literal', rotulo: 'Literal', detalhe: 'Texto como está, em fonte fixa' },
-            { id: 'citacao', rotulo: 'Citação', detalhe: 'Bloco de citação' },
-            { id: 'codigo', rotulo: 'Código', detalhe: 'Vira bloco de código' },
+            { id: 'paragrafo', rotulo: t.blocos.paragrafo, detalhe: 'Ctrl+Shift+0' },
+            { id: 'titulo1', rotulo: t.blocos.titulo1, detalhe: 'Ctrl+Shift+1' },
+            { id: 'titulo2', rotulo: t.blocos.titulo2, detalhe: 'Ctrl+Shift+2' },
+            { id: 'titulo3', rotulo: t.blocos.titulo3, detalhe: 'Ctrl+Shift+3' },
+            { id: 'titulo4', rotulo: t.blocos.titulo4, detalhe: 'Ctrl+Shift+4' },
+            { id: 'titulo5', rotulo: t.blocos.titulo5, detalhe: 'Ctrl+Shift+5' },
+            { id: 'literal', rotulo: t.blocos.literal, detalhe: t.literalDetalhe },
+            { id: 'citacao', rotulo: t.blocos.citacao, detalhe: t.citacaoDetalhe },
+            { id: 'codigo', rotulo: t.blocos.codigo, detalhe: t.codigoDetalhe },
           ]}
           aoEscolher={(pID) => {
             if (!inativo)
@@ -220,48 +213,48 @@ export function XBarraDoEditor({ modo, aoMudarModo, podeDesfazer, podeRefazer, a
         />
       </Grupo>
 
-      <Grupo rotulo="Formatação">
-        <Botao rotulo="Negrito" atalho="Ctrl+B" icone={<Bold size={16} />} ligado={marca('negrito')} desabilitado={inativo} aoClicar={() => aoComando('marca:negrito')} />
-        <Botao rotulo="Itálico" atalho="Ctrl+I" icone={<Italic size={16} />} ligado={marca('italico')} desabilitado={inativo} aoClicar={() => aoComando('marca:italico')} />
-        <Botao rotulo="Monoespaçado" atalho="Ctrl+E" icone={<Code size={16} />} ligado={marca('mono')} desabilitado={inativo} aoClicar={() => aoComando('marca:mono')} />
-        <Botao rotulo="Realce" atalho="Ctrl+H" icone={<Highlighter size={16} />} ligado={marca('realce')} desabilitado={inativo} aoClicar={() => aoComando('marca:realce')} />
-        <Botao rotulo="Sublinhado" atalho="Ctrl+U" icone={<Underline size={16} />} ligado={marca('sublinhado')} desabilitado={inativo} aoClicar={() => aoComando('marca:sublinhado')} />
-        <Botao rotulo="Tachado" atalho="Ctrl+Shift+X" icone={<Strikethrough size={16} />} ligado={marca('tachado')} desabilitado={inativo} aoClicar={() => aoComando('marca:tachado')} />
-        <Botao rotulo="Sobrescrito" icone={<Superscript size={16} />} ligado={marca('sobrescrito')} desabilitado={inativo} aoClicar={() => aoComando('marca:sobrescrito')} />
-        <Botao rotulo="Subscrito" icone={<Subscript size={16} />} ligado={marca('subscrito')} desabilitado={inativo} aoClicar={() => aoComando('marca:subscrito')} />
-        <Botao rotulo="Limpar formatação" dica="Tira todas as marcas do trecho selecionado" icone={<RemoveFormatting size={16} />} desabilitado={inativo} aoClicar={() => aoComando('limparMarcas')} />
+      <Grupo rotulo={t.formatacao}>
+        <Botao rotulo={t.negrito} atalho="Ctrl+B" icone={<Bold size={16} />} ligado={marca('negrito')} desabilitado={inativo} aoClicar={() => aoComando('marca:negrito')} />
+        <Botao rotulo={t.italico} atalho="Ctrl+I" icone={<Italic size={16} />} ligado={marca('italico')} desabilitado={inativo} aoClicar={() => aoComando('marca:italico')} />
+        <Botao rotulo={t.mono} atalho="Ctrl+E" icone={<Code size={16} />} ligado={marca('mono')} desabilitado={inativo} aoClicar={() => aoComando('marca:mono')} />
+        <Botao rotulo={t.realce} atalho="Ctrl+H" icone={<Highlighter size={16} />} ligado={marca('realce')} desabilitado={inativo} aoClicar={() => aoComando('marca:realce')} />
+        <Botao rotulo={t.sublinhado} atalho="Ctrl+U" icone={<Underline size={16} />} ligado={marca('sublinhado')} desabilitado={inativo} aoClicar={() => aoComando('marca:sublinhado')} />
+        <Botao rotulo={t.tachado} atalho="Ctrl+Shift+X" icone={<Strikethrough size={16} />} ligado={marca('tachado')} desabilitado={inativo} aoClicar={() => aoComando('marca:tachado')} />
+        <Botao rotulo={t.sobrescrito} icone={<Superscript size={16} />} ligado={marca('sobrescrito')} desabilitado={inativo} aoClicar={() => aoComando('marca:sobrescrito')} />
+        <Botao rotulo={t.subscrito} icone={<Subscript size={16} />} ligado={marca('subscrito')} desabilitado={inativo} aoClicar={() => aoComando('marca:subscrito')} />
+        <Botao rotulo={t.limparFormatacao} dica={t.limparFormatacaoDica} icone={<RemoveFormatting size={16} />} desabilitado={inativo} aoClicar={() => aoComando('limparMarcas')} />
       </Grupo>
 
-      <Grupo rotulo="Listas">
-        <Botao rotulo="Lista com marcadores" atalho="Ctrl+Shift+8" icone={<List size={16} />} ligado={estado.lista === 'marcadores'} desabilitado={inativo} aoClicar={() => aoComando('lista:marcadores')} />
-        <Botao rotulo="Lista numerada" atalho="Ctrl+Shift+7" icone={<ListOrdered size={16} />} ligado={estado.lista === 'numerada'} desabilitado={inativo} aoClicar={() => aoComando('lista:numerada')} />
-        <Botao rotulo="Lista de tarefas" atalho="Ctrl+Shift+9" icone={<ListChecks size={16} />} ligado={estado.lista === 'tarefas'} desabilitado={inativo} aoClicar={() => aoComando('lista:tarefas')} />
-        <Botao rotulo="Lista de descrição" dica="Termo e definição" icone={<ListTree size={16} />} ligado={estado.lista === 'descricao'} desabilitado={inativo} aoClicar={() => aoComando('lista:descricao')} />
-        <Botao rotulo="Aumentar recuo" atalho="Tab" icone={<ListIndentIncrease size={16} />} desabilitado={inativo || estado.lista === null || estado.lista === 'descricao'} aoClicar={() => aoComando('recuar')} />
-        <Botao rotulo="Diminuir recuo" atalho="Shift+Tab" icone={<ListIndentDecrease size={16} />} desabilitado={inativo || estado.lista === null || estado.lista === 'descricao'} aoClicar={() => aoComando('avancar')} />
+      <Grupo rotulo={t.listas}>
+        <Botao rotulo={t.listaMarcadores} atalho="Ctrl+Shift+8" icone={<List size={16} />} ligado={estado.lista === 'marcadores'} desabilitado={inativo} aoClicar={() => aoComando('lista:marcadores')} />
+        <Botao rotulo={t.listaNumerada} atalho="Ctrl+Shift+7" icone={<ListOrdered size={16} />} ligado={estado.lista === 'numerada'} desabilitado={inativo} aoClicar={() => aoComando('lista:numerada')} />
+        <Botao rotulo={t.listaTarefas} atalho="Ctrl+Shift+9" icone={<ListChecks size={16} />} ligado={estado.lista === 'tarefas'} desabilitado={inativo} aoClicar={() => aoComando('lista:tarefas')} />
+        <Botao rotulo={t.listaDescricao} dica={t.listaDescricaoDica} icone={<ListTree size={16} />} ligado={estado.lista === 'descricao'} desabilitado={inativo} aoClicar={() => aoComando('lista:descricao')} />
+        <Botao rotulo={t.aumentarRecuo} atalho="Tab" icone={<ListIndentIncrease size={16} />} desabilitado={inativo || estado.lista === null || estado.lista === 'descricao'} aoClicar={() => aoComando('recuar')} />
+        <Botao rotulo={t.diminuirRecuo} atalho="Shift+Tab" icone={<ListIndentDecrease size={16} />} desabilitado={inativo || estado.lista === null || estado.lista === 'descricao'} aoClicar={() => aoComando('avancar')} />
       </Grupo>
 
-      <Grupo rotulo="Inserir">
-        <Botao rotulo="Link" atalho="Ctrl+K" icone={<Link size={16} />} ligado={marca('link')} desabilitado={inativo} aoClicar={() => aoComando('inserir:link')} />
-        <Botao rotulo="Imagem" icone={<Image size={16} />} desabilitado={inativo} aoClicar={() => aoComando('inserir:imagem')} />
-        <Botao rotulo="Tabela" icone={<Table size={16} />} desabilitado={inativo} aoClicar={() => aoComando('inserir:tabela')} />
-        <Botao rotulo="Bloco de código" icone={<Braces size={16} />} desabilitado={inativo} aoClicar={() => aoComando('inserir:codigo')} />
+      <Grupo rotulo={t.inserir}>
+        <Botao rotulo={t.link} atalho="Ctrl+K" icone={<Link size={16} />} ligado={marca('link')} desabilitado={inativo} aoClicar={() => aoComando('inserir:link')} />
+        <Botao rotulo={t.imagem} icone={<Image size={16} />} desabilitado={inativo} aoClicar={() => aoComando('inserir:imagem')} />
+        <Botao rotulo={t.tabela} icone={<Table size={16} />} desabilitado={inativo} aoClicar={() => aoComando('inserir:tabela')} />
+        <Botao rotulo={t.blocoDeCodigo} icone={<Braces size={16} />} desabilitado={inativo} aoClicar={() => aoComando('inserir:codigo')} />
         <XMenuSuspenso
           gatilho={
             <span className="adc-barra-gatilho">
               <Info size={14} aria-hidden="true" />
-              <span>Admonição</span>
+              <span>{t.admonicao}</span>
               <ChevronDown size={12} aria-hidden="true" />
             </span>
           }
-          rotuloAcessivel="Inserir admonição"
+          rotuloAcessivel={t.inserirAdmonicao}
           classeDoGatilho={`adc-barra-seletor${inativo ? ' adc-barra-seletor-inativo' : ''}`}
           opcoes={[
-            { id: 'NOTE', rotulo: 'Nota', detalhe: 'NOTE' },
-            { id: 'TIP', rotulo: 'Dica', detalhe: 'TIP' },
-            { id: 'IMPORTANT', rotulo: 'Importante', detalhe: 'IMPORTANT' },
-            { id: 'WARNING', rotulo: 'Atenção', detalhe: 'WARNING' },
-            { id: 'CAUTION', rotulo: 'Cuidado', detalhe: 'CAUTION' },
+            { id: 'NOTE', rotulo: textos.admonicoes.NOTE, detalhe: 'NOTE' },
+            { id: 'TIP', rotulo: textos.admonicoes.TIP, detalhe: 'TIP' },
+            { id: 'IMPORTANT', rotulo: textos.admonicoes.IMPORTANT, detalhe: 'IMPORTANT' },
+            { id: 'WARNING', rotulo: textos.admonicoes.WARNING, detalhe: 'WARNING' },
+            { id: 'CAUTION', rotulo: textos.admonicoes.CAUTION, detalhe: 'CAUTION' },
           ]}
           aoEscolher={(pID) => {
             if (!inativo)
@@ -272,26 +265,27 @@ export function XBarraDoEditor({ modo, aoMudarModo, podeDesfazer, podeRefazer, a
           gatilho={
             <span className="adc-barra-gatilho">
               <FileText size={14} aria-hidden="true" />
-              <span>Mais</span>
+              <span>{t.mais}</span>
               <ChevronDown size={12} aria-hidden="true" />
             </span>
           }
-          rotuloAcessivel="Inserir outros elementos"
+          rotuloAcessivel={t.inserirOutros}
           classeDoGatilho={`adc-barra-seletor${inativo ? ' adc-barra-seletor-inativo' : ''}`}
           opcoes={[
-            { id: 'exemplo', rotulo: 'Bloco de exemplo', detalhe: '====' },
-            { id: 'barraLateral', rotulo: 'Barra lateral', detalhe: '****' },
-            { id: 'citacao', rotulo: 'Citação', detalhe: '____' },
-            { id: 'notaDeRodape', rotulo: 'Nota de rodapé', detalhe: 'footnote:[]' },
-            { id: 'referencia', rotulo: 'Referência cruzada', detalhe: '<<id>>' },
-            { id: 'ancora', rotulo: 'Âncora', detalhe: '[[id]]' },
-            { id: 'tecla', rotulo: 'Tecla, botão ou menu', detalhe: 'kbd:[] btn:[] menu:[]' },
-            { id: 'quebraDeLinha', rotulo: 'Quebra de linha', detalhe: 'Shift+Enter' },
-            { id: 'quebraTematica', rotulo: 'Quebra temática', detalhe: "'''" },
-            { id: 'quebraDePagina', rotulo: 'Quebra de página', detalhe: '<<<' },
-            { id: 'sumario', rotulo: 'Sumário', detalhe: 'toc::[]' },
-            { id: 'atributo', rotulo: 'Atributo do documento', detalhe: ':nome: valor' },
-            { id: 'comentario', rotulo: 'Comentário', detalhe: '//' },
+            { id: 'exemplo', rotulo: t.itens.exemplo, detalhe: '====' },
+            { id: 'barraLateral', rotulo: t.itens.barraLateral, detalhe: '****' },
+            { id: 'citacao', rotulo: t.itens.citacao, detalhe: '____' },
+            { id: 'notaDeRodape', rotulo: t.itens.notaDeRodape, detalhe: 'footnote:[]' },
+            { id: 'referencia', rotulo: t.itens.referencia, detalhe: '<<id>>' },
+            { id: 'ancora', rotulo: t.itens.ancora, detalhe: '[[id]]' },
+            { id: 'tecla', rotulo: t.itens.tecla, detalhe: 'kbd:[] btn:[] menu:[]' },
+            { id: 'quebraDeLinha', rotulo: t.itens.quebraDeLinha, detalhe: 'Shift+Enter' },
+            { id: 'quebraTematica', rotulo: t.itens.quebraTematica, detalhe: "'''" },
+            { id: 'quebraDePagina', rotulo: t.itens.quebraDePagina, detalhe: '<<<' },
+            { id: 'sumario', rotulo: t.itens.sumario, detalhe: 'toc::[]' },
+            { id: 'atributo', rotulo: t.itens.atributo, detalhe: ':nome: valor' },
+            { id: 'comentario', rotulo: t.itens.comentario, detalhe: '//' },
+            { id: 'formula', rotulo: t.itens.formula, detalhe: 'stem:[]' },
           ]}
           aoEscolher={(pID) => {
             if (!inativo)
@@ -301,30 +295,30 @@ export function XBarraDoEditor({ modo, aoMudarModo, podeDesfazer, podeRefazer, a
       </Grupo>
 
       {estado.emTabela && (
-        <Grupo rotulo="Tabela">
-          <Botao rotulo="Linha acima" icone={<Rows3 size={16} />} desabilitado={inativo} aoClicar={() => aoComando('tabela:linhaAntes')} />
-          <Botao rotulo="Linha abaixo" icone={<Rows3 size={16} className="rotate-180" />} desabilitado={inativo} aoClicar={() => aoComando('tabela:linhaDepois')} />
-          <Botao rotulo="Coluna à esquerda" icone={<Columns2 size={16} />} desabilitado={inativo} aoClicar={() => aoComando('tabela:colunaAntes')} />
-          <Botao rotulo="Coluna à direita" icone={<Columns2 size={16} className="rotate-180" />} desabilitado={inativo} aoClicar={() => aoComando('tabela:colunaDepois')} />
-          <Botao rotulo="Remover linha" icone={<Minus size={16} />} desabilitado={inativo} aoClicar={() => aoComando('tabela:removerLinha')} />
-          <Botao rotulo="Remover coluna" icone={<Minus size={16} className="rotate-90" />} desabilitado={inativo} aoClicar={() => aoComando('tabela:removerColuna')} />
-          <Botao rotulo="Alinhar coluna à esquerda" dica="Vale para a coluna inteira" icone={<TextAlignStart size={16} />} ligado={estado.alinhamentoDaCelula === 'esquerda'} desabilitado={inativo} aoClicar={() => aoComando('tabela:alinharEsquerda')} />
-          <Botao rotulo="Centralizar coluna" dica="Vale para a coluna inteira" icone={<TextAlignCenter size={16} />} ligado={estado.alinhamentoDaCelula === 'centro'} desabilitado={inativo} aoClicar={() => aoComando('tabela:alinharCentro')} />
-          <Botao rotulo="Alinhar coluna à direita" dica="Vale para a coluna inteira" icone={<TextAlignEnd size={16} />} ligado={estado.alinhamentoDaCelula === 'direita'} desabilitado={inativo} aoClicar={() => aoComando('tabela:alinharDireita')} />
-          <Botao rotulo="Primeira linha é cabeçalho" icone={<Hash size={16} />} ligado={estado.cabecalhoDaTabela} desabilitado={inativo} aoClicar={() => aoComando('tabela:cabecalho')} />
-          <Botao rotulo="Remover tabela" icone={<Trash size={16} />} desabilitado={inativo} aoClicar={() => aoComando('tabela:remover')} />
+        <Grupo rotulo={t.tabelaGrupo}>
+          <Botao rotulo={t.linhaAcima} icone={<Rows3 size={16} />} desabilitado={inativo} aoClicar={() => aoComando('tabela:linhaAntes')} />
+          <Botao rotulo={t.linhaAbaixo} icone={<Rows3 size={16} className="rotate-180" />} desabilitado={inativo} aoClicar={() => aoComando('tabela:linhaDepois')} />
+          <Botao rotulo={t.colunaEsquerda} icone={<Columns2 size={16} />} desabilitado={inativo} aoClicar={() => aoComando('tabela:colunaAntes')} />
+          <Botao rotulo={t.colunaDireita} icone={<Columns2 size={16} className="rotate-180" />} desabilitado={inativo} aoClicar={() => aoComando('tabela:colunaDepois')} />
+          <Botao rotulo={t.removerLinha} icone={<Minus size={16} />} desabilitado={inativo} aoClicar={() => aoComando('tabela:removerLinha')} />
+          <Botao rotulo={t.removerColuna} icone={<Minus size={16} className="rotate-90" />} desabilitado={inativo} aoClicar={() => aoComando('tabela:removerColuna')} />
+          <Botao rotulo={t.alinharEsquerda} dica={t.valeColunaInteira} icone={<TextAlignStart size={16} />} ligado={estado.alinhamentoDaCelula === 'esquerda'} desabilitado={inativo} aoClicar={() => aoComando('tabela:alinharEsquerda')} />
+          <Botao rotulo={t.centralizarColuna} dica={t.valeColunaInteira} icone={<TextAlignCenter size={16} />} ligado={estado.alinhamentoDaCelula === 'centro'} desabilitado={inativo} aoClicar={() => aoComando('tabela:alinharCentro')} />
+          <Botao rotulo={t.alinharDireita} dica={t.valeColunaInteira} icone={<TextAlignEnd size={16} />} ligado={estado.alinhamentoDaCelula === 'direita'} desabilitado={inativo} aoClicar={() => aoComando('tabela:alinharDireita')} />
+          <Botao rotulo={t.primeiraLinhaCabecalho} icone={<Hash size={16} />} ligado={estado.cabecalhoDaTabela} desabilitado={inativo} aoClicar={() => aoComando('tabela:cabecalho')} />
+          <Botao rotulo={t.removerTabela} icone={<Trash size={16} />} desabilitado={inativo} aoClicar={() => aoComando('tabela:remover')} />
         </Grupo>
       )}
 
-      <Grupo rotulo="Ferramentas">
-        <Botao rotulo="Localizar e substituir" atalho="Ctrl+F" dica="No modo Código" icone={<Search size={16} />} desabilitado={modo === 'visual'} aoClicar={() => aoComando('busca')} />
-        <Botao rotulo="Estrutura" dica="Painel com os títulos do documento" icone={<PanelLeft size={16} />} ligado={estruturaAberta} aoClicar={aoAlternarEstrutura} />
+      <Grupo rotulo={t.ferramentas}>
+        <Botao rotulo={t.localizarESubstituir} atalho="Ctrl+F" dica={t.noModoCodigo} icone={<Search size={16} />} desabilitado={modo === 'visual'} aoClicar={() => aoComando('busca')} />
+        <Botao rotulo={t.estrutura} dica={t.estruturaDica} icone={<PanelLeft size={16} />} ligado={estruturaAberta} aoClicar={aoAlternarEstrutura} />
       </Grupo>
 
-      <Grupo rotulo="Modo">
-        <Botao rotulo="Visual" dica="Edição WYSIWYG" icone={<PenLine size={16} />} ligado={modo === 'visual'} aoClicar={() => aoMudarModo('visual')} />
-        <Botao rotulo="Código" dica="O AsciiDoc com realce" icone={<Code size={16} />} ligado={modo === 'codigo'} aoClicar={() => aoMudarModo('codigo')} />
-        <Botao rotulo="Dividido" dica="Código à esquerda, visual ao vivo à direita" icone={<Eye size={16} />} ligado={modo === 'dividido'} aoClicar={() => aoMudarModo('dividido')} />
+      <Grupo rotulo={t.modo}>
+        <Botao rotulo={t.visual} dica={t.visualDica} icone={<PenLine size={16} />} ligado={modo === 'visual'} aoClicar={() => aoMudarModo('visual')} />
+        <Botao rotulo={t.codigo} dica={t.codigoDica} icone={<Code size={16} />} ligado={modo === 'codigo'} aoClicar={() => aoMudarModo('codigo')} />
+        <Botao rotulo={t.dividido} dica={t.divididoDica} icone={<Eye size={16} />} ligado={modo === 'dividido'} aoClicar={() => aoMudarModo('dividido')} />
       </Grupo>
     </div>
   );

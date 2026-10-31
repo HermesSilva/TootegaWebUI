@@ -76,7 +76,7 @@ export function escaparTexto(pTexto: string, pAnterior: string | undefined): str
       saida += '\\[';
       continue;
     }
-    if (!ehPalavra(antes) && /^(image|link|xref|mailto|footnote|kbd|btn|menu|pass|anchor|icon|indexterm):[^\s[]*\[/.test(pTexto.slice(i))) {
+    if (!ehPalavra(antes) && /^(image|link|xref|mailto|footnote|kbd|btn|menu|pass|anchor|icon|indexterm|stem|latexmath|asciimath):[^\s[]*\[/.test(pTexto.slice(i))) {
       saida += `\\${c}`;
       continue;
     }
@@ -117,6 +117,8 @@ function serializarAtomo(pAtomo: Atomo): string {
       return ' +\n';
     case 'passagem':
       return d.forma === 'pass' ? `pass:[${d.texto}]` : `${d.forma ?? '+++'}${d.texto}${d.forma ?? '+++'}`;
+    case 'formula':
+      return `${d.notacao ?? 'stem'}:[${d.texto ?? ''}]`;
     case 'bruto':
       return d.texto ?? '';
     default:
@@ -387,6 +389,9 @@ class Escritor {
       case 'midia':
         this.linhas.push(...prefixoDoBloco(pBloco), `${pBloco.especie}::${pBloco.alvo}[${pBloco.atributos ?? ''}]`);
         break;
+      case 'inclusao':
+        this.linhas.push(...prefixoDoBloco(pBloco), `include::${pBloco.alvo}[${pBloco.atributos ?? ''}]`);
+        break;
       case 'quebraTematica':
         this.linhas.push(...prefixoDoBloco(pBloco), "'''");
         break;
@@ -406,6 +411,11 @@ class Escritor {
       case 'passagem': {
         const delimitador = delimitadorSeguro('++++', pBloco.texto);
         this.linhas.push(...prefixoDoBloco(pBloco), delimitador, ...pBloco.texto.split('\n'), delimitador);
+        break;
+      }
+      case 'formula': {
+        const delimitador = delimitadorSeguro('++++', pBloco.texto);
+        this.linhas.push(...prefixoDoBloco(pBloco, pBloco.notacao), delimitador, ...pBloco.texto.split('\n'), delimitador);
         break;
       }
       case 'atributo':

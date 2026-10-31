@@ -1,20 +1,22 @@
 /**
  * XExplicacaoDoModelo — a área NÃO EDITÁVEL no topo do documento que explica o modelo: para que o documento serve,
  * e o que vai em cada seção. Recolhível, para não roubar a tela de quem já conhece o modelo; o estado do documento
- * diante do modelo (o que falta, o que está vazio) aparece ao lado de cada seção.
+ * diante do modelo (o que falta, o que está vazio) aparece ao lado de cada seção. Textos do catálogo (`useTextos`).
  */
 
-import { useState, type JSX } from 'react';
 import { BookOpen, Check, ChevronDown, ChevronRight, CircleAlert } from 'lucide-react';
-import type { AvaliacaoDoModelo, ModeloDeDocumento } from './modelo/modeloDeDocumento';
+import { useState, type JSX } from 'react';
 import { XTextoFormatado } from './XTextoFormatado';
+import type { AvaliacaoDoModelo, ModeloDeDocumento } from './modelo/modeloDeDocumento';
+import { f, useTextos } from './textos';
 
-interface XExplicacaoDoModeloProps {
+export interface XExplicacaoDoModeloProps {
   modelo: ModeloDeDocumento;
   avaliacao: AvaliacaoDoModelo;
 }
 
 export function XExplicacaoDoModelo({ modelo, avaliacao }: XExplicacaoDoModeloProps): JSX.Element {
+  const t = useTextos().modelo;
   const [aberta, setAberta] = useState(true);
   const estadoDaSecao = (pTitulo: string): 'falta' | 'vazia' | 'ordem' | 'ok' | 'opcional' => {
     if (avaliacao.faltantes.some((pS) => pS.titulo === pTitulo))
@@ -27,27 +29,27 @@ export function XExplicacaoDoModelo({ modelo, avaliacao }: XExplicacaoDoModeloPr
     return secao?.obrigatoria ? 'ok' : 'opcional';
   };
   const ROTULO: Record<ReturnType<typeof estadoDaSecao>, string> = {
-    falta: 'falta no documento',
-    vazia: 'ainda sem texto',
-    ordem: 'fora da ordem',
-    ok: 'preenchida',
-    opcional: 'opcional',
+    falta: t.falta,
+    vazia: t.vazia,
+    ordem: t.ordem,
+    ok: t.ok,
+    opcional: t.opcional,
   };
 
   return (
-    <aside className={`adc-modelo${avaliacao.completo ? ' adc-modelo-completo' : ''}`} data-ilha="" contentEditable={false} aria-label={`Modelo ${modelo.rotulo}`}>
+    <aside className={`adc-modelo${avaliacao.completo ? ' adc-modelo-completo' : ''}`} data-ilha="" contentEditable={false} aria-label={f(t.rotulo, modelo.rotulo)}>
       <button type="button" className="adc-modelo-cabecalho" onClick={() => setAberta((pA) => !pA)} aria-expanded={aberta}>
         {aberta ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
         <BookOpen size={16} aria-hidden="true" />
-        <span className="adc-modelo-rotulo">Modelo: {modelo.rotulo}</span>
+        <span className="adc-modelo-rotulo">{f(t.rotulo, modelo.rotulo)}</span>
         <span className={`adc-modelo-estado${avaliacao.completo ? ' adc-modelo-estado-ok' : ''}`}>
           {avaliacao.completo ? (
             <>
-              <Check size={14} aria-hidden="true" /> Completo
+              <Check size={14} aria-hidden="true" /> {t.completo}
             </>
           ) : (
             <>
-              <CircleAlert size={14} aria-hidden="true" /> {avaliacao.faltantes.length + avaliacao.vazias.length + avaliacao.foraDeOrdem.length} pendência(s)
+              <CircleAlert size={14} aria-hidden="true" /> {f(t.pendencias, avaliacao.faltantes.length + avaliacao.vazias.length + avaliacao.foraDeOrdem.length)}
             </>
           )}
         </span>
@@ -71,7 +73,7 @@ export function XExplicacaoDoModelo({ modelo, avaliacao }: XExplicacaoDoModeloPr
                   </p>
                   {pSecao.exemplo && (
                     <p className="adc-modelo-secao-exemplo adc-texto-formatado">
-                      <span className="adc-modelo-secao-rotulo-exemplo">Exemplo: </span>
+                      <span className="adc-modelo-secao-rotulo-exemplo">{t.exemplo}</span>
                       <XTextoFormatado texto={pSecao.exemplo} />
                     </p>
                   )}
