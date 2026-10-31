@@ -38,7 +38,7 @@ describe('parser e serializador AsciiDoc', () => {
   it('reconhece cada espécie de bloco do exemplo', () => {
     const { documento } = analisarAsciiDoc(DOCUMENTO_DE_EXEMPLO);
     const encontrados = new Set(tipos(documento.blocos));
-    for (const tipo of ['paragrafo', 'titulo', 'lista', 'descricao', 'admonicao', 'container', 'codigo', 'chamadas', 'tabela', 'imagem', 'midia', 'quebraTematica', 'quebraDePagina', 'sumario', 'comentario', 'passagem', 'atributo', 'bruto'])
+    for (const tipo of ['paragrafo', 'titulo', 'lista', 'descricao', 'admonicao', 'container', 'codigo', 'chamadas', 'tabela', 'imagem', 'midia', 'quebraTematica', 'quebraDePagina', 'sumario', 'comentario', 'passagem', 'atributo', 'inclusao'])
       expect(encontrados.has(tipo), `falta o bloco ${tipo}`).toBe(true);
   });
 
@@ -88,10 +88,10 @@ describe('parser e serializador AsciiDoc', () => {
     expect(textoPuro(analisarInline(serializarInline(partes)))).toBe('Um *asterisco* literal e {attr} literal');
   });
 
-  it('o que não se reconhece vira bloco bruto e volta intacto', () => {
+  it('o que não se reconhece vira bloco bruto e volta intacto (include é bloco próprio desde 2026-10-31)', () => {
     const texto = 'include::x.adoc[]\n\nmacrodesconhecida::alvo[a=1]';
     const { documento } = analisarAsciiDoc(texto);
-    expect(tipos(documento.blocos)).toEqual(['bruto', 'bruto']);
+    expect(tipos(documento.blocos)).toEqual(['inclusao', 'bruto']);
     expect(serializarDocumento(documento)).toBe(texto);
   });
 
