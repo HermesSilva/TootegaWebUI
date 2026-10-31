@@ -47,5 +47,7 @@ repositório aberto sozinho.
 - **NUNCA subir o front** (`npm run dev`) — quem levanta é o dono.
 - **NUNCA commitar nem empurrar sem pedido explícito do dono.** Um pedido, um commit. Mensagem de commit sem
   assinatura de IA. Mudança que cruza motor e SaaS são **dois commits, em dois repositórios**, que andam juntos.
-- **NUNCA criar branch nem trocar de branch.** Trabalha-se na branch em que a sessão começou.
+- **Toda alteração vai numa branch própria, depois um PR para `master`, e o PR apaga a branch ao mesclar** (dono,
+  2026-10-31; `delete_branch_on_merge` ligado no repositório). `master` não aceita push direto e exige o check
+  "Typecheck + testes puros".
 - **Responder em português**, ortografia correta.
