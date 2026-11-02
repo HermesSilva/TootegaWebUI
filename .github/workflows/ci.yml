@@ -26,10 +26,18 @@ on:
 jobs:
   typecheck:
     name: Typecheck + testes puros
-    runs-on: self-hosted
+    # Runner hospedado pelo GitHub (dono, 2026-11-02): o self-hosted era da organização Tootega e deixou de atender quando
+    # o repositório passou para HermesSilva. Repositório público não paga minutos e não deve rodar em máquina própria.
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
 
       - name: Verify Node.js installation
         shell: bash
