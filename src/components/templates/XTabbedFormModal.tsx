@@ -51,7 +51,7 @@ import { FormBusyProvider } from '@core/contexts/FormBusyContext';
 import { FormValuesProvider } from '@core/contexts/FormValuesContext';
 import { XFormBusyVeil } from './XFormBusyVeil';
 import { pisoDoFormularioPx, alturaDoCorpoPx, temCampoElastico, ehCampoElastico, MODAL_MAX_PERCENT } from '@core/lib/formScale';
-import { CLOSE_BUTTON_STYLE, aplicarTotaisAoVivo, aplicarValoresDirigidos, errosDoPrecoDoItem, formatCurrency, formatDate, formatDateTime, formatDecimal, formatDocument, formatPercentage, getFieldValue, gridAlignmentClass, isTruthy, isVisible } from '@core/lib';
+import { CLOSE_BUTTON_STYLE, aplicarTotaisAoVivo, aplicarValoresDirigidos, errosDasRegrasDaGrade, errosDoPrecoDoItem, formatCurrency, formatDate, formatDateTime, formatDecimal, formatDocument, formatPercentage, getFieldValue, gridAlignmentClass, isTruthy, isVisible } from '@core/lib';
 
 // ============================================================================
 // Types
@@ -1606,6 +1606,13 @@ export function XTabbedFormModal({
     const dosPrecos = errosDoPrecoDoItem(camposDasAbas, formData);
     if (Object.keys(dosPrecos).length > 0) {
       Object.assign(newErrors, dosPrecos);
+      isValid = false;
+    }
+
+    // As células fora do formato que a própria linha pede (o tipo do contato decide o valor).
+    const dasRegras = errosDasRegrasDaGrade(camposDasAbas, formData);
+    if (Object.keys(dasRegras).length > 0) {
+      Object.assign(newErrors, dasRegras);
       isValid = false;
     }
 

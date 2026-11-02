@@ -32,6 +32,7 @@ import {
   descontoDoPrecoDoItem, mensagemDoPrecoDoItem, precoDoItemAtivo, precoDoItemExibido, precoDoItemInformado,
   precoDoItemValido,
 } from '@core/lib/precoDoItem';
+import { erroDaCelula, regraDaCelula } from '@core/lib/regrasDaCelula';
 import { XBUTTON_PALETTE } from '@core/lib/xButtonPalette';
 import { XButtonColor } from '@core/types';
 
@@ -716,16 +717,33 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
 
     // Célula mascarada: EXIBE com máscara e GUARDA cru (dígitos), como o resto da plataforma. O
     // documento do sócio, que já vem mascarado da Receita, é preservado como está.
-    if (MASCARADOS.includes(pColuna.editorType))
+    //
+    // Coluna com regra por linha (o tipo do contato decide o formato): com máscara, só entram dígitos; sem
+    // ela, é texto livre, porque um e-mail que começa com número não pode virar telefone enquanto se digita.
+    // A célula vazia não acusa ao nascer: quem a cobra é o Salvar. A frase entra e sai como irmã do campo,
+    // para ele não remontar e perder o foco no meio da digitação.
+    if (MASCARADOS.includes(pColuna.editorType)) {
+      const regra = regraDaCelula(pColuna, pLinha);
+      const textoLivre = regra !== null && !regra.masked;
+      const erro = !celTravada && String(valor ?? '') !== '' ? erroDaCelula(pColuna, pLinha) : null;
+      const classe = cellClassOf(celTravada);
+
       return (
-        <input
-          type="text"
-          value={mascarar(pColuna.editorType, valor)}
-          disabled={celTravada}
-          onChange={(e) => atualizar(pIndice, pColuna.fieldName, limpar(pColuna.editorType, e.target.value))}
-          className={cellClassOf(celTravada)}
-        />
+        <>
+          <input
+            type="text"
+            value={textoLivre ? String(valor ?? '') : mascarar(pColuna.editorType, valor)}
+            disabled={celTravada}
+            aria-invalid={erro ? true : undefined}
+            title={erro ?? undefined}
+            onChange={(e) => atualizar(pIndice, pColuna.fieldName,
+              textoLivre ? e.target.value : regra ? e.target.value.replace(/\D/g, '') : limpar(pColuna.editorType, e.target.value))}
+            className={erro ? classe.replace('border-border', 'border-danger') : classe}
+          />
+          {erro && <p role="alert" className="mt-0.5 text-ui-xs text-danger whitespace-normal leading-tight">{erro}</p>}
+        </>
       );
+    }
 
     // Moeda/decimal: MESMA edição do XCurrencyEditor (formata, alinha à direita, SEM spin). A célula
     // cuida do formato/foco/blur; a só-leitura fica com cor distinta. Grava número (0 quando limpo).

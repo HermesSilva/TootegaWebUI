@@ -18,6 +18,7 @@ export {
   precoDoItemAtivo, precoDoItemInformado, precoDoItemValido, descontoDoPrecoDoItem, precoDoItemExibido,
   mensagemDoPrecoDoItem, errosDoPrecoDoItem,
 } from './precoDoItem';
+export { regraDaCelula, erroDaCelula, errosDasRegrasDaGrade } from './regrasDaCelula';
 export { ratearDesconto, type LinhaRateavel, type RateioResultado } from './rateioDesconto';
 export {
   getIntlLocale,
