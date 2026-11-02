@@ -29,6 +29,8 @@ export interface QuadroDeModal {
   y: number;
   largura?: number;
   altura?: number;
+  /** Versão do modelo em que foi gravado: em desenvolvimento, só vale nela (`useQuadroDoFormulario`). */
+  versao?: string;
 }
 
 /**
