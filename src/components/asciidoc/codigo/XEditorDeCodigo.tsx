@@ -145,9 +145,9 @@ export function inserirNoTextarea(pArea: HTMLTextAreaElement, pTexto: string, pI
 
 function linhaDaPosicao(pTexto: string, pPosicao: number): number {
   let linha = 0;
-  for (let i = 0; i < pPosicao && i < pTexto.length; i++)
-    if (pTexto.charCodeAt(i) === 10)
-      linha += 1;
+  // Roda algumas vezes por tecla: `indexOf` salta de quebra em quebra em vez de olhar cada caractere.
+  for (let i = pTexto.indexOf('\n'); i !== -1 && i < pPosicao; i = pTexto.indexOf('\n', i + 1))
+    linha += 1;
   return linha;
 }
 

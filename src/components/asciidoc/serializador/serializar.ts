@@ -272,11 +272,31 @@ function marcadorDaLista(pEstilo: 'marcadores' | 'numerada' | 'tarefas', pProfun
 
 class Escritor {
   readonly linhas: string[] = [];
+  /** Linhas escritas, no texto final: um item de `linhas` pode trazer `\n` por dentro. */
+  contagem = 0;
+  /** Onde cada bloco começa (1 = a primeira linha deste escritor), a mesma `linha` que o parser grava. */
+  readonly carimbos: [Bloco, number][] = [];
+
+  escrever(...pLinhas: string[]): void {
+    for (const linha of pLinhas) {
+      this.linhas.push(linha);
+      this.contagem += 1;
+      for (let i = linha.indexOf('\n'); i !== -1; i = linha.indexOf('\n', i + 1))
+        this.contagem += 1;
+    }
+  }
+
+  /** Prefixo (título, âncora, atributos), a marca da linha em que o bloco começa, e o corpo. */
+  private emitir(pBloco: Bloco, pPrefixo: string[], ...pCorpo: string[]): void {
+    this.escrever(...pPrefixo);
+    this.carimbos.push([pBloco, this.contagem + 1]);
+    this.escrever(...pCorpo);
+  }
 
   blocos(pBlocos: Bloco[], pProfundidadeDeLista: number): void {
     pBlocos.forEach((pBloco, pIndice) => {
       if (pIndice > 0)
-        this.linhas.push('');
+        this.escrever('');
       this.bloco(pBloco, pProfundidadeDeLista);
     });
   }
@@ -288,24 +308,24 @@ class Escritor {
         const prefixo = prefixoDoBloco(pBloco, estilo);
         if (pBloco.estilo === 'lead')
           prefixo.push('[.lead]');
-        this.linhas.push(...prefixo, serializarInline(pBloco.conteudo));
+        this.emitir(pBloco, prefixo, serializarInline(pBloco.conteudo));
         break;
       }
       case 'titulo':
-        this.linhas.push(...prefixoDoBloco(pBloco, pBloco.discreto ? 'discrete' : undefined), `${'='.repeat(pBloco.nivel + 1)} ${serializarInline(pBloco.conteudo)}`);
+        this.emitir(pBloco, prefixoDoBloco(pBloco, pBloco.discreto ? 'discrete' : undefined), `${'='.repeat(pBloco.nivel + 1)} ${serializarInline(pBloco.conteudo)}`);
         break;
       case 'lista':
         this.lista(pBloco, pProfundidadeDeLista);
         break;
       case 'descricao':
-        this.linhas.push(...prefixoDoBloco(pBloco));
+        this.emitir(pBloco, prefixoDoBloco(pBloco));
         pBloco.itens.forEach((pItem) => {
           const termo = `${serializarInline(pItem.conteudo)}${'::'.repeat(1)}${':'.repeat(pProfundidadeDeLista)}`;
           const [primeiro, ...resto] = pItem.filhos;
           if (primeiro && primeiro.tipo === 'paragrafo' && !primeiro.titulo && !primeiro.ancora && !primeiro.atributosBrutos) {
-            this.linhas.push(`${termo} ${serializarInline(primeiro.conteudo)}`);
+            this.escrever(`${termo} ${serializarInline(primeiro.conteudo)}`);
           } else {
-            this.linhas.push(termo);
+            this.escrever(termo);
             if (primeiro)
               this.anexo(primeiro, pProfundidadeDeLista + 1, true);
           }
@@ -314,25 +334,25 @@ class Escritor {
         });
         break;
       case 'chamadas':
-        this.linhas.push(...prefixoDoBloco(pBloco));
+        this.emitir(pBloco, prefixoDoBloco(pBloco));
         for (const item of pBloco.itens)
-          this.linhas.push(`<${item.numero}> ${serializarInline(item.conteudo)}`);
+          this.escrever(`<${item.numero}> ${serializarInline(item.conteudo)}`);
         break;
       case 'codigo': {
         if (pBloco.estilo === 'literal') {
           const delimitador = delimitadorSeguro('....', pBloco.codigo);
-          this.linhas.push(...prefixoDoBloco(pBloco), delimitador, ...pBloco.codigo.split('\n'), delimitador);
+          this.emitir(pBloco, prefixoDoBloco(pBloco), delimitador, ...pBloco.codigo.split('\n'), delimitador);
           break;
         }
         const estilo = pBloco.estilo === 'fonte' ? (pBloco.linguagem ? `source,${pBloco.linguagem}` : 'source') : undefined;
         const delimitador = delimitadorSeguro('----', pBloco.codigo);
-        this.linhas.push(...prefixoDoBloco(pBloco, estilo), delimitador, ...pBloco.codigo.split('\n'), delimitador);
+        this.emitir(pBloco, prefixoDoBloco(pBloco, estilo), delimitador, ...pBloco.codigo.split('\n'), delimitador);
         break;
       }
       case 'admonicao': {
         const [unico] = pBloco.filhos;
         if (pBloco.filhos.length === 1 && unico.tipo === 'paragrafo' && !unico.titulo && !unico.ancora && !unico.atributosBrutos && !unico.estilo) {
-          this.linhas.push(...prefixoDoBloco(pBloco), `${pBloco.especie}: ${serializarInline(unico.conteudo)}`);
+          this.emitir(pBloco, prefixoDoBloco(pBloco), `${pBloco.especie}: ${serializarInline(unico.conteudo)}`);
           break;
         }
         this.container(pBloco, pBloco.especie, '====', pProfundidadeDeLista);
@@ -363,13 +383,13 @@ class Escritor {
         const prefixo = prefixoDoBloco(pBloco);
         if (atributos !== '')
           prefixo.push(`[${atributos}]`);
-        this.linhas.push(...prefixo, '|===');
+        this.emitir(pBloco, prefixo, '|===');
         pBloco.linhas.forEach((pLinha, pIndice) => {
-          this.linhas.push(pLinha.celulas.map((pCelula) => `${especificacaoDaCelula(pCelula)}|${serializarInline(pCelula.conteudo).replace(/\|/g, '\\|')}`).join(' '));
+          this.escrever(pLinha.celulas.map((pCelula) => `${especificacaoDaCelula(pCelula)}|${serializarInline(pCelula.conteudo).replace(/\|/g, '\\|')}`).join(' '));
           if (pIndice === 0 && pBloco.cabecalho)
-            this.linhas.push('');
+            this.escrever('');
         });
-        this.linhas.push('|===');
+        this.escrever('|===');
         break;
       }
       case 'imagem': {
@@ -383,46 +403,50 @@ class Escritor {
         if (pBloco.outrosAtributos)
           partes.push(pBloco.outrosAtributos);
         const atributos = partes.join(',');
-        this.linhas.push(...prefixoDoBloco(pBloco), `image::${pBloco.alvo}[${atributos === ',' ? '' : atributos}]`);
+        this.emitir(pBloco, prefixoDoBloco(pBloco), `image::${pBloco.alvo}[${atributos === ',' ? '' : atributos}]`);
         break;
       }
       case 'midia':
-        this.linhas.push(...prefixoDoBloco(pBloco), `${pBloco.especie}::${pBloco.alvo}[${pBloco.atributos ?? ''}]`);
+        this.emitir(pBloco, prefixoDoBloco(pBloco), `${pBloco.especie}::${pBloco.alvo}[${pBloco.atributos ?? ''}]`);
         break;
       case 'inclusao':
-        this.linhas.push(...prefixoDoBloco(pBloco), `include::${pBloco.alvo}[${pBloco.atributos ?? ''}]`);
+        this.emitir(pBloco, prefixoDoBloco(pBloco), `include::${pBloco.alvo}[${pBloco.atributos ?? ''}]`);
         break;
       case 'quebraTematica':
-        this.linhas.push(...prefixoDoBloco(pBloco), "'''");
+        this.emitir(pBloco, prefixoDoBloco(pBloco), "'''");
         break;
       case 'quebraDePagina':
-        this.linhas.push(...prefixoDoBloco(pBloco), '<<<');
+        this.emitir(pBloco, prefixoDoBloco(pBloco), '<<<');
         break;
       case 'sumario':
-        this.linhas.push(...prefixoDoBloco(pBloco), 'toc::[]');
+        this.emitir(pBloco, prefixoDoBloco(pBloco), 'toc::[]');
         break;
       case 'comentario':
         if (pBloco.emBloco) {
           const delimitador = delimitadorSeguro('////', pBloco.texto);
-          this.linhas.push(...prefixoDoBloco(pBloco), delimitador, ...pBloco.texto.split('\n'), delimitador);
+          this.emitir(pBloco, prefixoDoBloco(pBloco), delimitador, ...pBloco.texto.split('\n'), delimitador);
         } else
-          this.linhas.push(...prefixoDoBloco(pBloco), ...pBloco.texto.split('\n').map((pL) => `//${pL}`));
+          this.emitir(pBloco, prefixoDoBloco(pBloco), ...pBloco.texto.split('\n').map((pL) => `//${pL}`));
         break;
       case 'passagem': {
         const delimitador = delimitadorSeguro('++++', pBloco.texto);
-        this.linhas.push(...prefixoDoBloco(pBloco), delimitador, ...pBloco.texto.split('\n'), delimitador);
+        this.emitir(pBloco, prefixoDoBloco(pBloco), delimitador, ...pBloco.texto.split('\n'), delimitador);
         break;
       }
       case 'formula': {
         const delimitador = delimitadorSeguro('++++', pBloco.texto);
-        this.linhas.push(...prefixoDoBloco(pBloco, pBloco.notacao), delimitador, ...pBloco.texto.split('\n'), delimitador);
+        this.emitir(pBloco, prefixoDoBloco(pBloco, pBloco.notacao), delimitador, ...pBloco.texto.split('\n'), delimitador);
         break;
       }
       case 'atributo':
-        this.linhas.push(...prefixoDoBloco(pBloco), `:${pBloco.nome}:${pBloco.valor === '' ? '' : ` ${pBloco.valor.replace(/\n/g, ' \\\n')}`}`);
+        this.emitir(pBloco, prefixoDoBloco(pBloco), `:${pBloco.nome}:${pBloco.valor === '' ? '' : ` ${pBloco.valor.replace(/\n/g, ' \\\n')}`}`);
         break;
       case 'bruto':
-        this.linhas.push(...prefixoDoBloco(pBloco), ...pBloco.texto.split('\n'));
+        // Bruto sem linha é título ou atributo órfão: o parser também não a grava quando o lê de novo.
+        if (pBloco.linha === undefined)
+          this.escrever(...prefixoDoBloco(pBloco), ...pBloco.texto.split('\n'));
+        else
+          this.emitir(pBloco, prefixoDoBloco(pBloco), ...pBloco.texto.split('\n'));
         break;
       default:
         break;
@@ -433,16 +457,19 @@ class Escritor {
     const interno = new Escritor();
     interno.blocos(pBloco.filhos, pProfundidadeDeLista);
     const delimitador = delimitadorSeguro(pDelimitador, interno.linhas.join('\n'));
-    this.linhas.push(...prefixoDoBloco(pBloco, pEstilo), delimitador, ...interno.linhas, delimitador);
+    this.emitir(pBloco, prefixoDoBloco(pBloco, pEstilo), delimitador);
+    for (const [bloco, linha] of interno.carimbos)
+      this.carimbos.push([bloco, linha + this.contagem]);
+    this.escrever(...interno.linhas, delimitador);
   }
 
   private lista(pLista: Bloco & { tipo: 'lista' }, pProfundidadeDeLista: number): void {
     const profundidade = pProfundidadeDeLista + 1;
     const marcador = marcadorDaLista(pLista.estilo, profundidade);
-    this.linhas.push(...prefixoDoBloco(pLista));
+    this.emitir(pLista, prefixoDoBloco(pLista));
     for (const item of pLista.itens) {
       const tarefa = pLista.estilo === 'tarefas' ? `[${item.marcado ? 'x' : ' '}] ` : '';
-      this.linhas.push(`${marcador} ${tarefa}${serializarInline(item.conteudo)}`);
+      this.escrever(`${marcador} ${tarefa}${serializarInline(item.conteudo)}`);
       item.filhos.forEach((pFilho) => this.anexo(pFilho, profundidade, false));
     }
   }
@@ -450,15 +477,23 @@ class Escritor {
   /** Bloco anexado a um item: sublista vai direto; o resto vai por `+`. */
   private anexo(pFilho: Bloco, pProfundidade: number, pPrimeiroDaDescricao: boolean): void {
     if (pFilho.tipo === 'lista' || pFilho.tipo === 'descricao') {
-      this.bloco(pFilho, pProfundidade);
+      this.blocoSemLinha(pFilho, pProfundidade);
       return;
     }
     if (pPrimeiroDaDescricao && pFilho.tipo === 'paragrafo') {
-      this.bloco(pFilho, pProfundidade);
+      this.blocoSemLinha(pFilho, pProfundidade);
       return;
     }
-    this.linhas.push('+');
+    this.escrever('+');
+    this.blocoSemLinha(pFilho, pProfundidade);
+  }
+
+  /** O parser não grava `linha` no bloco anexado a um item (grava nos que estão dentro dele, se for um container). */
+  private blocoSemLinha(pFilho: Bloco, pProfundidade: number): void {
+    const indice = this.carimbos.length;
     this.bloco(pFilho, pProfundidade);
+    if (this.carimbos[indice]?.[0] === pFilho)
+      this.carimbos.splice(indice, 1);
   }
 }
 
@@ -477,21 +512,68 @@ function especificacaoDaCelula(pCelula: { colunas?: number; linhas?: number; ali
 // Documento
 // ============================================================================
 
-export function serializarDocumento(pDocumento: Documento): string {
+interface BlocoEscrito {
+  texto: string;
+  contagem: number;
+  carimbos: [Bloco, number][];
+}
+
+/**
+ * O modelo é imutável (só `linha` é regravada, e o serializador a ignora), então o texto de um bloco de primeiro nível
+ * não muda enquanto o objeto for o mesmo: depois de uma edição, só o bloco editado é escrito de novo.
+ */
+const blocosEscritos = new WeakMap<Bloco, BlocoEscrito>();
+
+function escreverBloco(pBloco: Bloco): BlocoEscrito {
+  const guardado = blocosEscritos.get(pBloco);
+  if (guardado)
+    return guardado;
   const escritor = new Escritor();
+  escritor.bloco(pBloco, 0);
+  const escrito: BlocoEscrito = { texto: escritor.linhas.join('\n'), contagem: escritor.contagem, carimbos: escritor.carimbos };
+  blocosEscritos.set(pBloco, escrito);
+  return escrito;
+}
+
+export interface DocumentoSerializado {
+  texto: string;
+  /** A linha de cada bloco no texto, para quem precisa dela sem reanalisar (`editor/linhas`). */
+  linhas: Map<Bloco, number>;
+}
+
+/** O texto do documento e, de graça, a linha em que cada bloco começa nele. */
+export function serializarDocumentoComLinhas(pDocumento: Documento): DocumentoSerializado {
+  const cabecalhoEscrito = new Escritor();
   const cabecalho = pDocumento.cabecalho;
   if (cabecalho) {
     if (cabecalho.titulo)
-      escritor.linhas.push(`= ${serializarInline(cabecalho.titulo)}`);
+      cabecalhoEscrito.escrever(`= ${serializarInline(cabecalho.titulo)}`);
     if (cabecalho.autores)
-      escritor.linhas.push(cabecalho.autores);
+      cabecalhoEscrito.escrever(cabecalho.autores);
     if (cabecalho.revisao)
-      escritor.linhas.push(cabecalho.revisao);
+      cabecalhoEscrito.escrever(cabecalho.revisao);
     for (const atributo of cabecalho.atributos)
-      escritor.linhas.push(`:${atributo.nome}:${atributo.valor === '' ? '' : ` ${atributo.valor.replace(/\n/g, ' \\\n')}`}`);
+      cabecalhoEscrito.escrever(`:${atributo.nome}:${atributo.valor === '' ? '' : ` ${atributo.valor.replace(/\n/g, ' \\\n')}`}`);
     if (pDocumento.blocos.length > 0)
-      escritor.linhas.push('');
+      cabecalhoEscrito.escrever('');
   }
-  escritor.blocos(pDocumento.blocos, 0);
-  return escritor.linhas.join('\n');
+  const partes: string[] = cabecalhoEscrito.linhas.length > 0 ? [cabecalhoEscrito.linhas.join('\n')] : [];
+  const linhas = new Map<Bloco, number>();
+  let ate = cabecalhoEscrito.contagem;
+  pDocumento.blocos.forEach((pBloco, pIndice) => {
+    if (pIndice > 0) {
+      partes.push('');
+      ate += 1;
+    }
+    const escrito = escreverBloco(pBloco);
+    partes.push(escrito.texto);
+    for (const [bloco, linha] of escrito.carimbos)
+      linhas.set(bloco, linha + ate);
+    ate += escrito.contagem;
+  });
+  return { texto: partes.join('\n'), linhas };
+}
+
+export function serializarDocumento(pDocumento: Documento): string {
+  return serializarDocumentoComLinhas(pDocumento).texto;
 }

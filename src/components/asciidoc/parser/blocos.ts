@@ -466,10 +466,13 @@ class ParserDeBlocos {
     return this.paragrafoComEstilo(textoDoParagrafo, pPendentes);
   }
 
-  /** As linhas de um parágrafo. `pPrimeiraLivre`: a primeira linha entra mesmo que pareça começar outro bloco. */
+  /**
+   * As linhas de um parágrafo. `pPrimeiraLivre`: a primeira linha entra mesmo que pareça começar outro bloco, inclusive
+   * um `+` solto: quem chama conta com ao menos uma linha consumida, e sem isso `blocos()` não avançava nunca.
+   */
   private linhasDoParagrafo(pPrimeiraLivre = false): string[] {
     const textos: string[] = [];
-    while (this.linha !== undefined && !ehBranca(this.linha) && ((pPrimeiraLivre && textos.length === 0) || !iniciaBloco(this.linha)) && this.linha !== '+') {
+    while (this.linha !== undefined && !ehBranca(this.linha) && ((pPrimeiraLivre && textos.length === 0) || (!iniciaBloco(this.linha) && this.linha !== '+'))) {
       textos.push(this.linha);
       this.pos += 1;
     }

@@ -26,10 +26,11 @@ import { avaliarModelo, garantirEspacoDasSecoes, secoesTravadas, violacaoDoModel
 import { XEditorDeCodigo, type PosicaoNoCodigo, type XEditorDeCodigoHandle } from './codigo/XEditorDeCodigo';
 import * as codigo from './codigo/edicaoDeTexto';
 import { XVistaWYSIWYG, type CursorVirtual, type PedidoDeDialogo } from './wysiwyg/XVistaWYSIWYG';
-import { carimbarLinhas } from './editor/linhas';
+import { gravarLinhasDoSerializador } from './editor/linhas';
+import { reaproveitarBlocos } from './editor/reaproveitarBlocos';
 import type { AcionadorDeReferencia, ResolvedorDeRecurso } from './wysiwyg/contexto';
 import { analisarAsciiDoc, documentoVazio } from './parser/blocos';
-import { serializarDocumento } from './serializador/serializar';
+import { serializarDocumentoComLinhas } from './serializador/serializar';
 import { comprimentoInline, folhaPorID, marcasNaPosicao, novoID, textoDoDocumento, textoPuro } from './modelo/documento';
 import type { AvisoDoParser, Bloco, Documento, EspecieDeAdmonicao, EstiloDeLista, Inline, Marca, Tabela, TipoDeMarca } from './modelo/tipos';
 import { Historico } from './editor/historico';
@@ -108,6 +109,7 @@ export interface XEditorAsciiDocProps {
 }
 
 const ATRASO_DE_EMISSAO_MS = 150;
+const ATRASO_DAS_ESTATISTICAS_MS = 300;
 const CHAVE_DA_PROPORCAO = 'tootega.editorAsciiDoc.proporcao';
 const PROPORCAO_MINIMA = 0.15;
 const PASSO_DO_TECLADO = 0.05;
@@ -375,7 +377,9 @@ export function XEditorAsciiDoc({
   /** Texto → documento (entrada no visual, ou digitação no código em modo dividido). Zera seleção e histórico. */
   const reanalisarTexto = useCallback((pTexto: string) => {
     const analise = analisarAsciiDoc(pTexto);
-    const doc = analise.documento.blocos.length === 0 ? { ...analise.documento, blocos: documentoVazio().blocos } : analise.documento;
+    // Os blocos iguais continuam os mesmos objetos, com os mesmos ids: a vista só toca no que mudou.
+    const blocos = analise.documento.blocos.length === 0 ? documentoVazio().blocos : reaproveitarBlocos(documentoRef.current.blocos, analise.documento.blocos);
+    const doc = { ...analise.documento, blocos };
     documentoRef.current = doc;
     setDocumento(doc);
     setAvisos(analise.avisos);
@@ -403,13 +407,13 @@ export function XEditorAsciiDoc({
   const emitirDocumento = useCallback(
     (pDocumento: Documento, pImediato = false) => {
       const emitir = (): void => {
-        const serializado = serializarDocumento(pDocumento);
+        const { texto: serializado, linhas } = serializarDocumentoComLinhas(pDocumento);
         if (serializado === ultimoEmitido.current)
           return;
         ultimoEmitido.current = serializado;
         origemDaMudanca.current = 'visual';
         // As linhas de origem dos blocos acompanham o texto novo: o cursor virtual depende delas nos dois sentidos.
-        carimbarLinhas(pDocumento, serializado);
+        gravarLinhasDoSerializador(pDocumento, linhas);
         setTexto(serializado);
         aoMudar(serializado);
       };
@@ -1010,9 +1014,21 @@ export function XEditorAsciiDoc({
 
   // ------------------------------------------------------------------ status
 
-  const textoCorrente = modo === 'visual' ? textoDoDocumento(documento) : texto;
-  const palavras = useMemo(() => contarPalavras(textoCorrente), [textoCorrente]);
-  const caracteres = textoCorrente.length;
+  // Palavras e caracteres percorrem o documento inteiro: contam depois de uma pausa, fora do caminho da tecla (18 ms por
+  // tecla medidos em 549 KB). O valor inicial é síncrono, para a barra nunca mostrar zero num documento aberto.
+  const lerEstatisticas = (): { palavras: number; caracteres: number } => {
+    const textoCorrente = modo === 'visual' ? textoDoDocumento(documento) : texto;
+    return { palavras: contarPalavras(textoCorrente), caracteres: textoCorrente.length };
+  };
+  const [{ palavras, caracteres }, setEstatisticas] = useState(lerEstatisticas);
+  useEffect(() => {
+    const temporizadorDasEstatisticas = window.setTimeout(() => {
+      const novas = lerEstatisticas();
+      setEstatisticas((pE) => (pE.palavras === novas.palavras && pE.caracteres === novas.caracteres ? pE : novas));
+    }, ATRASO_DAS_ESTATISTICAS_MS);
+    return () => window.clearTimeout(temporizadorDasEstatisticas);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documento, modo, texto]);
   const blocos = useMemo(() => contarBlocos((modo === 'codigo' ? documentoDaPrevia : documento).blocos), [documento, documentoDaPrevia, modo]);
   const linhas = useMemo(() => (modo === 'visual' ? 0 : texto.split('\n').length), [modo, texto]);
 

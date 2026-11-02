@@ -36,6 +36,26 @@ function copiarLinhas(pDestino: Bloco[], pOrigem: Bloco[]): boolean {
   return true;
 }
 
+function gravarLinhas(pBlocos: Bloco[], pLinhas: Map<Bloco, number>): void {
+  for (const bloco of pBlocos) {
+    const linha = pLinhas.get(bloco);
+    if (linha !== undefined)
+      bloco.linha = linha;
+    else
+      delete bloco.linha;
+    for (const filhos of filhosDoBloco(bloco))
+      gravarLinhas(filhos, pLinhas);
+  }
+}
+
+/**
+ * Grava no modelo as linhas que o serializador acabou de calcular: é o caminho da emissão do visual, sem reanalisar o
+ * texto (a reanálise era o maior custo depois de cada pausa). Mesmo contrato de `carimbarLinhas`: só `linha` muda.
+ */
+export function gravarLinhasDoSerializador(pDocumento: Documento, pLinhas: Map<Bloco, number>): void {
+  gravarLinhas(pDocumento.blocos, pLinhas);
+}
+
 /**
  * Carimba em `pDocumento` as linhas que `pTexto` (a sua serialização) tem para cada bloco. Devolve `false` quando a
  * estrutura reanalisada não bate com o modelo (não deveria acontecer; aí as linhas antigas ficam como estão).
