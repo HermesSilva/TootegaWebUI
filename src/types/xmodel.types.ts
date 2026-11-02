@@ -687,6 +687,8 @@ export interface XUIGridColumn {
     | 'picker' | 'plate';
   /** Largura percentual da coluna DENTRO da sua `row`. */
   width: number;
+  /** Valor com que a célula nasce numa linha nova, em texto. Vazio ⇒ o padrão do tipo da coluna. */
+  defaultValue?: string;
   /**
    * Linha em que a coluna aparece dentro de cada item (0 = primeira). Todas em zero ⇒ tabela comum;
    * havendo linha > 0, cada item ocupa várias fileiras (cadastro largo, como o endereço).

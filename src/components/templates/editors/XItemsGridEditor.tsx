@@ -132,8 +132,11 @@ function toRows(pValue: unknown): Row[] {
 function novaLinha(pColunas: XUIGridColumn[]): Row {
   const row: Row = {};
   for (const c of pColunas) {
-    if (c.editorType === 'number' || c.editorType === 'integer' || c.editorType === 'currency') row[c.fieldName] = 0;
-    else if (c.editorType === 'checkbox') row[c.fieldName] = false;
+    const padrao = c.defaultValue ?? '';
+    const numerica = c.editorType === 'number' || c.editorType === 'integer' || c.editorType === 'currency';
+    if (numerica) row[c.fieldName] = padrao ? Number(padrao) : 0;
+    else if (c.editorType === 'checkbox') row[c.fieldName] = padrao === 'true';
+    else if (padrao) row[c.fieldName] = padrao;
     else if (c.editorType === 'combo') row[c.fieldName] = c.options?.[0]?.value ?? '';
     else row[c.fieldName] = '';
   }
