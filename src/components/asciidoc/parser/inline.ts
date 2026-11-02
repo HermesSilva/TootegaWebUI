@@ -30,7 +30,7 @@ const MARCA_DO_DELIMITADOR: Record<string, TipoDeMarca> = {
   '#': 'realce',
 };
 
-const MACROS = /^(image|link|xref|mailto|footnote|kbd|btn|menu|pass|anchor|icon|indexterm):([^[\s]*)\[/;
+const MACROS = /^(image|link|xref|mailto|footnote|kbd|btn|menu|pass|anchor|icon|indexterm|stem|latexmath|asciimath):([^[\s]*)\[/;
 const URL = /^(https?|ftp|irc|file):\/\/[^\s[\]<>]+/;
 const EMAIL = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
 
@@ -318,6 +318,11 @@ class ScannerInline {
         return [atomo('menu', { alvo: pAlvo, texto: pAtributos })];
       case 'pass':
         return [atomo('passagem', { texto: pAtributos, forma: 'pass' })];
+      case 'stem':
+      case 'latexmath':
+      case 'asciimath':
+        // A fonte da fórmula vai como veio: `pAtributos` não é lista de atributos aqui (2026-10-31).
+        return [atomo('formula', { notacao: pNome, texto: pAtributos })];
       case 'anchor':
         return [atomo('ancora', primeiro.length > 0 ? { id: pAlvo, texto: primeiro } : { id: pAlvo })];
       default:

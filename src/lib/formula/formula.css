@@ -1,0 +1,78 @@
+/*
+ * Folha de estilo do motor de fórmulas: o pouco que o MathML Core não faz sozinho — fonte matemática, cercaduras
+ * (menclose não existe no Core), sobreposições (mpadded não aceita lspace negativo), bordas de array/hline,
+ * colunas coladas de `aligned`, etiquetas de equação, texto em negrito/itálico/mono dentro de mtext.
+ */
+
+math.adc-formula {
+  font-family: 'Latin Modern Math', 'STIX Two Math', 'Cambria Math', 'Libertinus Math', 'TeX Gyre Termes Math', math, serif;
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+math.adc-formula[display='block'] {
+  margin: 0.6em 0;
+}
+
+/* texto */
+.adc-f-texto-negrito { font-weight: 700; }
+.adc-f-texto-italico { font-style: italic; }
+.adc-f-texto-mono, .adc-f-mono { font-family: ui-monospace, 'Cascadia Mono', Consolas, 'Liberation Mono', monospace; font-size: 0.9em; }
+.adc-f-texto-semSerifa { font-family: system-ui, 'Segoe UI', Arial, sans-serif; }
+
+/* sobreposições */
+.adc-f-llap { transform: translateX(-100%); }
+.adc-f-clap { transform: translateX(-50%); }
+
+/* cercaduras */
+.adc-f-cerc { padding: 0.1em 0.2em; }
+.adc-f-cerc-boxed, .adc-f-cerc-fbox, .adc-f-cerc-fcolorbox { border: 0.04em solid currentColor; padding: 0.2em 0.35em; }
+.adc-f-cerc-colorbox { padding: 0.2em 0.35em; }
+.adc-f-cerc-cancel { background: linear-gradient(to top right, transparent calc(50% - 0.03em), currentColor calc(50% - 0.03em), currentColor calc(50% + 0.03em), transparent calc(50% + 0.03em)); }
+.adc-f-cerc-bcancel { background: linear-gradient(to bottom right, transparent calc(50% - 0.03em), currentColor calc(50% - 0.03em), currentColor calc(50% + 0.03em), transparent calc(50% + 0.03em)); }
+.adc-f-cerc-xcancel {
+  background:
+    linear-gradient(to top right, transparent calc(50% - 0.03em), currentColor calc(50% - 0.03em), currentColor calc(50% + 0.03em), transparent calc(50% + 0.03em)),
+    linear-gradient(to bottom right, transparent calc(50% - 0.03em), currentColor calc(50% - 0.03em), currentColor calc(50% + 0.03em), transparent calc(50% + 0.03em));
+}
+.adc-f-cerc-sout { background: linear-gradient(to bottom, transparent calc(50% - 0.03em), currentColor calc(50% - 0.03em), currentColor calc(50% + 0.03em), transparent calc(50% + 0.03em)); }
+.adc-f-cerc-angl { border-top: 0.04em solid currentColor; border-right: 0.04em solid currentColor; padding: 0.1em 0.2em 0 0.1em; }
+.adc-f-cerc-phase { border-bottom: 0.04em solid currentColor; border-left: 0.04em solid currentColor; padding: 0 0.1em 0.1em 0.3em; }
+
+/* operadores e setas */
+.adc-f-rotulo-seta { padding: 0 0.4em; }
+.adc-f-pmb { font-weight: 700; }
+.adc-f-reflectbox { transform: scaleX(-1); display: inline-block; }
+
+/* arranjos */
+.adc-f-arranjo > mtr > mtd { padding: 0.25em 0.5em; }
+.adc-f-compacto > mtr > mtd { padding: 0.08em 0.3em; }
+.adc-f-col-e { text-align: left; }
+.adc-f-col-c { text-align: center; }
+.adc-f-col-d { text-align: right; }
+.adc-f-colada { padding-left: 0 !important; }
+mtd:has(+ .adc-f-colada) { padding-right: 0 !important; }
+.adc-f-par { padding-left: 1.5em !important; }
+.adc-f-cases { padding-left: 1em !important; }
+.adc-f-cases ~ .adc-f-cases { padding-left: 0.5em !important; }
+.adc-f-borda-esq { border-left: 0.04em solid currentColor; }
+.adc-f-borda-esq-dupla { border-left: 0.12em double currentColor; }
+.adc-f-borda-esq-tracejada { border-left: 0.04em dashed currentColor; }
+.adc-f-borda-dir { border-right: 0.04em solid currentColor; }
+.adc-f-borda-dir-dupla { border-right: 0.12em double currentColor; }
+.adc-f-borda-dir-tracejada { border-right: 0.04em dashed currentColor; }
+.adc-f-borda-topo { border-top: 0.04em solid currentColor; }
+.adc-f-borda-topo-dupla { border-top: 0.12em double currentColor; }
+.adc-f-borda-topo-tracejada { border-top: 0.04em dashed currentColor; }
+.adc-f-borda-base { border-bottom: 0.04em solid currentColor; }
+.adc-f-borda-base-dupla { border-bottom: 0.12em double currentColor; }
+.adc-f-borda-base-tracejada { border-bottom: 0.04em dashed currentColor; }
+.adc-f-linhas > mtr > mtd { padding: 0.3em 0; }
+
+/* etiquetas de equação (não há mlabeledtr no Core) */
+.adc-f-etiquetada { width: 100%; }
+.adc-f-etiqueta { text-align: right; width: 1%; white-space: nowrap; padding-left: 1.5em !important; }
+
+/* erro: o que não se leu fica visível e marcado */
+merror.adc-f-erro { background: hsl(var(--error-bg, 0 85% 95%)); color: hsl(var(--error-text, 0 70% 35%)); border: 1px dashed currentColor; padding: 0 0.2em; }
+merror.adc-f-erro > mtext { font-family: ui-monospace, Consolas, monospace; font-size: 0.85em; }

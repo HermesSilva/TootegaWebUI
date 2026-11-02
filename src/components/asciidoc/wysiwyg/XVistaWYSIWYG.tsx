@@ -14,7 +14,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { analisarInline } from '../parser/inline';
 import { analisarAsciiDoc } from '../parser/blocos';
 import { serializarDocumento, serializarInline } from '../serializador/serializar';
-import { comprimentoInline, fatiarInline, folhaPorID, folhasDoDocumento, textoPuro } from '../modelo/documento';
+import { atributoDoCabecalho, comprimentoInline, fatiarInline, folhaPorID, folhasDoDocumento, textoPuro } from '../modelo/documento';
 import type { Bloco, Documento, Lista, Marca, TipoDeMarca } from '../modelo/tipos';
 import type { SecaoDoModelo } from '../modelo/modeloDeDocumento';
 import { estaColapsada, ordenarSelecao, posicao, selecaoColapsada, selecoesIguais, type Selecao } from '../editor/selecao';
@@ -37,15 +37,23 @@ import {
   type Resultado,
 } from '../editor/transacoes';
 import { atomo } from '../modelo/documento';
-import { ContextoDaVista, type AcoesDaVista } from './contexto';
+import { ContextoDaVista, type AcionadorDeReferencia, type AcoesDaVista, type ResolvedorDeRecurso } from './contexto';
 import { RenderizarBloco } from './blocos';
+import { useTextos } from '../textos';
 import { deslocamentoNoDOM, elementoDaFolha, elementoDaFolhaPorID, lerConteudoDoDOM, pontoDoModelo } from './mapeamentoDOM';
 
 // ============================================================================
 // Tipos
 // ============================================================================
 
-export type PedidoDeDialogo = { tipo: 'link' | 'imagem' | 'tabela' | 'referencia' | 'notaDeRodape' | 'atributo' | 'tecla' | 'ancora'; blocoID?: string };
+export type PedidoDeDialogo = { tipo: 'link' | 'imagem' | 'tabela' | 'referencia' | 'notaDeRodape' | 'atributo' | 'tecla' | 'ancora' | 'formula'; blocoID?: string };
+
+/**
+ * Cursor VIRTUAL (modo dividido, 2026-10-31): onde o cursor do código cai no documento. Com `folha` e `deslocamento`
+ * a vista desenha um cursor fantasma na posição; só com `bloco`, destaca o bloco. Nunca mexe na seleção real — o foco
+ * continua no código.
+ */
+export type CursorVirtual = { bloco: string; folha?: string; deslocamento?: number };
 
 export interface XVistaWYSIWYGProps {
   documento: Documento;
@@ -64,6 +72,12 @@ export interface XVistaWYSIWYGProps {
   /** Folhas fixas do modelo de documento (id do título → a seção), que não se editam. */
   folhasTravadas?: ReadonlyMap<string, SecaoDoModelo>;
   className?: string;
+  /** Converte o alvo de imagem/mídia no endereço que o navegador carrega (padrão: o alvo como está). */
+  resolverRecurso?: ResolvedorDeRecurso;
+  /** Abre include, referência ou link quando o usuário pede (botão do include, Ctrl+clique). */
+  aoAcionarReferencia?: AcionadorDeReferencia;
+  /** Posição do cursor do código a espelhar na vista (modo dividido); `null` apaga. */
+  cursorVirtual?: CursorVirtual | null;
 }
 
 const MARCA_DO_ATALHO: Record<string, TipoDeMarca> = { b: 'negrito', i: 'italico', e: 'mono', h: 'realce', u: 'sublinhado' };
@@ -95,6 +109,7 @@ function atributosDoTexto(pTexto: string): Atributos {
  * só é substituído quando os atributos do modelo mudam por fora (outro modo, desfazer, valor novo).
  */
 function CampoDeAtributos({ atributos, somenteLeitura, aoMudar }: { atributos: Atributos; somenteLeitura: boolean; aoMudar: (pAtributos: Atributos) => void }): JSX.Element {
+  const tv = useTextos().vista;
   const doModelo = textoDosAtributos(atributos);
   const [texto, setTexto] = useState(doModelo);
   const ultimoEmitido = useRef(doModelo);
@@ -108,8 +123,8 @@ function CampoDeAtributos({ atributos, somenteLeitura, aoMudar }: { atributos: A
     <textarea
       className="adc-cabecalho-atributos"
       value={texto}
-      placeholder=":atributo: valor"
-      aria-label="Atributos do documento, um por linha"
+      placeholder={tv.atributosPlaceholder}
+      aria-label={tv.atributosRotulo}
       rows={Math.max(2, Math.min(12, texto.split('\n').length + 1))}
       readOnly={somenteLeitura}
       spellCheck={false}
@@ -124,16 +139,17 @@ function CampoDeAtributos({ atributos, somenteLeitura, aoMudar }: { atributos: A
 }
 
 function CabecalhoDoDocumento({ documento, somenteLeitura, aoMudar }: { documento: Documento; somenteLeitura: boolean; aoMudar: (pDocumento: Documento) => void }): JSX.Element | null {
+  const tv = useTextos().vista;
   const cabecalho = documento.cabecalho;
   if (!cabecalho)
     return null;
   const mudar = (pParte: Partial<NonNullable<Documento['cabecalho']>>): void => aoMudar({ ...documento, cabecalho: { ...cabecalho, ...pParte } });
   return (
-    <header className="adc-cabecalho" data-ilha="" contentEditable={false}>
-      <input className="adc-cabecalho-titulo" value={textoPuro(cabecalho.titulo ?? [])} placeholder="Título do documento" aria-label="Título do documento" readOnly={somenteLeitura} onChange={(pE) => mudar({ titulo: analisarInline(pE.target.value) })} />
+    <header className="adc-cabecalho" data-ilha="" data-linha={1} contentEditable={false}>
+      <input className="adc-cabecalho-titulo" value={textoPuro(cabecalho.titulo ?? [])} placeholder={tv.tituloDoDocumento} aria-label={tv.tituloDoDocumento} readOnly={somenteLeitura} onChange={(pE) => mudar({ titulo: analisarInline(pE.target.value) })} />
       <div className="adc-cabecalho-linha">
-        <input className="adc-cabecalho-campo" value={cabecalho.autores ?? ''} placeholder="Autores" aria-label="Autores" readOnly={somenteLeitura} onChange={(pE) => mudar({ autores: pE.target.value || undefined })} />
-        <input className="adc-cabecalho-campo" value={cabecalho.revisao ?? ''} placeholder="Revisão (v1.0, 2026-01-01: nota)" aria-label="Revisão" readOnly={somenteLeitura} onChange={(pE) => mudar({ revisao: pE.target.value || undefined })} />
+        <input className="adc-cabecalho-campo" value={cabecalho.autores ?? ''} placeholder={tv.autores} aria-label={tv.autores} readOnly={somenteLeitura} onChange={(pE) => mudar({ autores: pE.target.value || undefined })} />
+        <input className="adc-cabecalho-campo" value={cabecalho.revisao ?? ''} placeholder={tv.revisaoPlaceholder} aria-label={tv.revisao} readOnly={somenteLeitura} onChange={(pE) => mudar({ revisao: pE.target.value || undefined })} />
       </div>
       <CampoDeAtributos atributos={cabecalho.atributos} somenteLeitura={somenteLeitura} aoMudar={(pAtributos) => mudar({ atributos: pAtributos })} />
     </header>
@@ -159,7 +175,12 @@ export function XVistaWYSIWYG({
   aoSelecionarBloco,
   folhasTravadas,
   className = '',
+  resolverRecurso,
+  aoAcionarReferencia,
+  cursorVirtual = null,
 }: XVistaWYSIWYGProps): JSX.Element {
+  const marcadorCursor = useRef<HTMLDivElement>(null);
+  const envolucro = useRef<HTMLDivElement>(null);
   const raiz = useRef<HTMLDivElement>(null);
   const compondo = useRef(false);
   const ultimaSelecaoDoDOM = useRef<Selecao | null>(null);
@@ -240,6 +261,57 @@ export function XVistaWYSIWYG({
       }
     }
   }, [documento, selecao, lerSelecaoDoDOM, pontoDoDOMDe]);
+
+  /** Cursor virtual: um traço na posição que o código aponta, e o bloco destacado; rola até lá quando sai da vista. */
+  useLayoutEffect(() => {
+    const r = raiz.current;
+    const marcador = marcadorCursor.current;
+    const env = envolucro.current;
+    if (!r || !marcador || !env)
+      return;
+    for (const el of r.querySelectorAll('.adc-bloco-cursor-virtual'))
+      el.classList.remove('adc-bloco-cursor-virtual');
+    if (!cursorVirtual) {
+      marcador.style.display = 'none';
+      return;
+    }
+    const alvo = (cursorVirtual.folha ? elementoDaFolhaPorID(r, cursorVirtual.folha) : null) ?? (r.querySelector(`[data-bloco="${cursorVirtual.bloco}"]`) as HTMLElement | null) ?? elementoDaFolhaPorID(r, cursorVirtual.bloco);
+    if (!alvo) {
+      marcador.style.display = 'none';
+      return;
+    }
+    alvo.classList.add('adc-bloco-cursor-virtual');
+    let caixa: DOMRect | null = null;
+    if (cursorVirtual.folha && cursorVirtual.deslocamento !== undefined && alvo.hasAttribute('data-folha')) {
+      const ponto = pontoDoModelo(alvo, cursorVirtual.deslocamento);
+      try {
+        const intervalo = document.createRange();
+        intervalo.setStart(ponto.no, ponto.deslocamento);
+        intervalo.collapse(true);
+        const rects = intervalo.getClientRects();
+        caixa = rects.length > 0 ? rects[0] : intervalo.getBoundingClientRect();
+        if (caixa.height === 0)
+          caixa = null;
+      } catch {
+        caixa = null;
+      }
+    }
+    const base = env.getBoundingClientRect();
+    if (caixa) {
+      marcador.style.display = 'block';
+      marcador.style.top = `${caixa.top - base.top}px`;
+      marcador.style.left = `${caixa.left - base.left}px`;
+      marcador.style.height = `${caixa.height}px`;
+    } else
+      marcador.style.display = 'none';
+    const moldura = r.closest('.adc-rolagem') ?? r.parentElement;
+    if (moldura) {
+      const limite = moldura.getBoundingClientRect();
+      const ref = caixa ?? alvo.getBoundingClientRect();
+      if (ref.bottom > limite.bottom || ref.top < limite.top)
+        (caixa ? alvo : alvo).scrollIntoView({ block: 'center' });
+    }
+  }, [cursorVirtual, documento]);
 
   useEffect(() => {
     const aoMudarSelecaoNoDOM = (): void => {
@@ -659,6 +731,7 @@ export function XVistaWYSIWYG({
 
   // ----------------------------------------------------------------- contexto
 
+  const atributoStem = atributoDoCabecalho(documento, 'stem');
   const acoes = useMemo<AcoesDaVista>(
     () => ({
       atualizarBloco: (pID, pMudanca) => aplicar({ documento: atualizarBloco(atual.current.documento, pID, pMudanca), selecao: atual.current.selecao }, `bloco:${pID}`),
@@ -670,13 +743,18 @@ export function XVistaWYSIWYG({
       blocoSelecionado,
       versaoDaFolha: (pID) => versoes.current.get(pID) ?? 0,
       folhaTravada: (pID) => folhasTravadas?.get(pID) ?? null,
+      resolverRecurso: resolverRecurso ?? ((pAlvo) => pAlvo),
+      acionarReferencia: aoAcionarReferencia,
+      atributoStem,
     }),
-    [aplicar, blocoSelecionado, folhasTravadas, somenteLeitura],
+    [aplicar, aoAcionarReferencia, atributoStem, blocoSelecionado, folhasTravadas, resolverRecurso, somenteLeitura],
   );
+  const tv = useTextos().vista;
 
   return (
     <ContextoDaVista.Provider value={acoes}>
-      <div className={`adc-documento ${className}`.trim()}>
+      <div ref={envolucro} className={`adc-documento ${className}`.trim()}>
+        <div ref={marcadorCursor} className="adc-cursor-virtual" aria-hidden="true" style={{ display: 'none' }} />
         <CabecalhoDoDocumento documento={documento} somenteLeitura={somenteLeitura} aoMudar={(pDoc) => aplicar({ documento: pDoc, selecao: atual.current.selecao }, 'cabecalho')} />
         <div
           ref={raiz}
@@ -686,7 +764,7 @@ export function XVistaWYSIWYG({
           spellCheck
           role="textbox"
           aria-multiline="true"
-          aria-label="Conteúdo do documento"
+          aria-label={tv.conteudoDoDocumento}
           aria-readonly={somenteLeitura}
           onKeyDown={aoTeclar}
           onCopy={aoCopiar}

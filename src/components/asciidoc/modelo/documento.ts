@@ -15,6 +15,7 @@ import type {
   ItemDeDescricao,
   ItemDeLista,
   Marca,
+  NotacaoDeFormula,
   TrechoDeTexto,
 } from './tipos';
 
@@ -250,6 +251,23 @@ export function filhosDoBloco(pBloco: Bloco): Bloco[][] {
     default:
       return [];
   }
+}
+
+/** O valor de um atributo do cabeçalho (`:stem: latexmath` ⇒ `'latexmath'`; `:stem:` ⇒ `''`), ou `undefined` sem ele. */
+export function atributoDoCabecalho(pDocumento: Documento, pNome: string): string | undefined {
+  const entrada = pDocumento.cabecalho?.atributos.find((pA) => pA.nome === pNome);
+  return entrada?.valor.trim();
+}
+
+/**
+ * A notação que de fato interpreta uma fórmula: `stem` resolve pelo atributo `:stem:` do documento (regra do
+ * Asciidoctor: vazio = AsciiMath; `latexmath`, `tex` ou `latex` = LaTeX); as outras valem por si.
+ */
+export function notacaoEfetiva(pNotacao: NotacaoDeFormula, pAtributoStem: string | undefined): 'latexmath' | 'asciimath' {
+  if (pNotacao !== 'stem')
+    return pNotacao;
+  const valor = (pAtributoStem ?? '').toLowerCase();
+  return valor === 'latexmath' || valor === 'tex' || valor === 'latex' ? 'latexmath' : 'asciimath';
 }
 
 /** Todo o texto do documento, para contagem de palavras. */

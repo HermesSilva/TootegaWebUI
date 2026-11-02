@@ -21,6 +21,8 @@ import type {
   EspecieDeAdmonicao,
   EspecieDeContainer,
   EstiloDeLista,
+  Formula,
+  NotacaoDeFormula,
   ItemDeChamada,
   ItemDeDescricao,
   ItemDeLista,
@@ -52,6 +54,7 @@ const CHAMADA = /^<(\d+|\.)>\s+(.*)$/;
 const TABELA = /^([|,:])===\s*$/;
 const IMAGEM = /^image::([^[\s]+)\[(.*)\]\s*$/;
 const MIDIA = /^(video|audio)::([^[\s]+)\[(.*)\]\s*$/;
+const INCLUSAO = /^include::([^[\s]+)\[(.*)\]\s*$/;
 const SUMARIO = /^toc::\[.*\]\s*$/;
 const MACRO_DE_BLOCO = /^[a-z]+::[^[]*\[.*\]\s*$/;
 const QUEBRA_DE_PAGINA = /^<<<\s*$/;
@@ -119,6 +122,14 @@ interface Pendentes {
   ancora?: string;
   atributos?: AtributosLidos;
   linhasDeAtributos: string[];
+}
+
+function ehNotacaoDeFormula(pEstilo: string): pEstilo is NotacaoDeFormula {
+  return pEstilo === 'stem' || pEstilo === 'latexmath' || pEstilo === 'asciimath';
+}
+
+function formula(pNotacao: NotacaoDeFormula, pTexto: string): Formula {
+  return { id: novoID(), tipo: 'formula', notacao: pNotacao, texto: pTexto };
 }
 
 function semPendentes(): Pendentes {
@@ -237,8 +248,10 @@ class ParserDeBlocos {
         this.pos += 1;
         continue;
       }
+      const inicio = this.pos;
       const bloco = this.umBloco(pendentes);
       if (bloco) {
+        bloco.linha = this.base + inicio + 1;
         saida.push(bloco);
         pendentes = semPendentes();
       }
@@ -291,9 +304,13 @@ class ParserDeBlocos {
     if (papeis.length > 0)
       saida.papeis = papeis;
     if (!pAtributosConsumidos && pPendentes.linhasDeAtributos.length > 0) {
-      // Guarda só o que o modelo não absorveu: tira id e papéis, que já estão no bloco.
+      // Guarda só o que o modelo não absorveu: tira id e papéis, que já estão no bloco. O ESTILO de lista
+      // (`[square]`, `[loweralpha]`, `[horizontal]`, `[qanda]`) e o que o acompanha (`[start=4]`, `[%reversed]`) o
+      // modelo não representa: ficam como vieram, para o round-trip não os perder (apurado em 2026-10-31).
+      // Título de seção: o estilo (`[appendix]`, `[bibliography]`, `[glossary]`…) também não tem lugar no modelo.
+      const manterEstilo = (pBloco.tipo === 'lista' && pBloco.estilo !== 'tarefas') || pBloco.tipo === 'descricao' || (pBloco.tipo === 'container' && pBloco.especie === 'aberto') || pBloco.tipo === 'titulo';
       const restantes = pPendentes.linhasDeAtributos
-        .map((pL) => linhaDeAtributosSem(pL, { id: true, papeis: true, estilo: pBloco.tipo !== 'bruto' }))
+        .map((pL) => linhaDeAtributosSem(pL, { id: true, papeis: true, estilo: pBloco.tipo !== 'bruto' && !manterEstilo }))
         .filter((pL) => pL !== null) as string[];
       if (restantes.length > 0)
         saida.atributosBrutos = restantes;
@@ -380,6 +397,14 @@ class ParserDeBlocos {
       this.pos += 1;
       return this.decorar({ id: novoID(), tipo: 'sumario' }, pPendentes);
     }
+    const inclusao = INCLUSAO.exec(linha);
+    if (inclusao) {
+      this.pos += 1;
+      const bloco: Bloco = { id: novoID(), tipo: 'inclusao', alvo: inclusao[1] };
+      if (inclusao[2])
+        bloco.atributos = inclusao[2];
+      return this.decorar(bloco, pPendentes);
+    }
     if (MACRO_DE_BLOCO.test(linha)) {
       this.pos += 1;
       return this.decorar({ id: novoID(), tipo: 'bruto', texto: linha }, pPendentes);
@@ -415,7 +440,7 @@ class ParserDeBlocos {
     // Listas.
     const marcador = lerMarcador(linha);
     if (marcador)
-      return this.decorar(this.lista(marcador.marcador, pPendentes), pPendentes, true);
+      return this.decorar(this.lista(marcador.marcador, pPendentes), pPendentes);
     const descricao = lerDescricao(linha);
     if (descricao)
       return this.decorar(this.listaDeDescricao(descricao.profundidade), pPendentes);
@@ -482,6 +507,8 @@ class ParserDeBlocos {
       return this.decorar({ id: novoID(), tipo: 'comentario', texto: pTexto, emBloco: false }, pPendentes, true);
     if (estilo === 'pass')
       return this.decorar({ id: novoID(), tipo: 'passagem', texto: pTexto }, pPendentes, true);
+    if (ehNotacaoDeFormula(estilo))
+      return this.decorar(formula(estilo, pTexto), pPendentes, true);
     const paragrafo: Bloco = { id: novoID(), tipo: 'paragrafo', conteudo: analisarInline(pTexto) };
     const decorado = this.decorar(paragrafo, pPendentes);
     if (decorado.papeis?.includes('lead')) {
@@ -518,6 +545,12 @@ class ParserDeBlocos {
     const estilo = pPendentes.atributos?.posicionais[0] ?? '';
     const fecha = (pL: string): boolean => pL === pDelimitador;
     const tipo = pDelimitador[0];
+
+    // `[stem]`/`[latexmath]`/`[asciimath]` sobre passagem, listagem ou literal: a fonte da fórmula (2026-10-31).
+    if (ehNotacaoDeFormula(estilo) && (tipo === '+' || tipo === '-' || tipo === '.') && pDelimitador.length >= 4) {
+      const corpo = this.ateFechar(fecha, pDelimitador);
+      return this.decorar(formula(estilo, corpo.join('\n')), pPendentes, true);
+    }
 
     if (tipo === '-' && pDelimitador.length >= 4) {
       const corpo = this.ateFechar(fecha, pDelimitador);
@@ -572,8 +605,11 @@ class ParserDeBlocos {
         container.autor = pPendentes.atributos.posicionais[1];
       if (pPendentes.atributos?.posicionais[2])
         container.fonte = pPendentes.atributos.posicionais[2];
+      return this.decorar(container, pPendentes, true);   // autor e fonte absorvidos: a linha inteira é do modelo
     }
-    return this.decorar(container, pPendentes, true);
+    // Exemplo, barra lateral e aberto: o estilo redundante com o delimitador sai, o resto (`%collapsible`, `%open`,
+    // `[abstract]` num bloco aberto) fica em atributosBrutos — o modelo não o representa e o round-trip o mantém.
+    return this.decorar(container, pPendentes);
   }
 
   private citacaoMarkdown(): Container {
@@ -861,7 +897,8 @@ function linhaDeAtributosSem(pLinha: string, pRemover: { id: boolean; papeis: bo
       continue;
     nomeados[nome] = valor;
   }
-  const opcoes = pRemover.tabela ? [] : lidos.opcoes.filter(() => !lidos.nomeados.options && !lidos.nomeados.opts);
+  // Tabela: header e footer são do modelo (`cabecalho`/`rodape`); as demais opções (`%autowidth`…) ficam, como `%x`.
+  const opcoes = pRemover.tabela ? lidos.opcoes.filter((pO) => pO !== 'header' && pO !== 'footer') : lidos.opcoes.filter(() => !lidos.nomeados.options && !lidos.nomeados.opts);
   const partes: string[] = [];
   const atalho = opcoes.map((pO) => `%${pO}`).join('');
   const primeiro = (posicionais[0] ?? '') + atalho;

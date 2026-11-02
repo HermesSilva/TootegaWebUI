@@ -29,12 +29,15 @@ import {
   type JSX,
   type KeyboardEvent,
   type ReactNode,
+  type Ref,
+  useImperativeHandle,
 } from 'react';
 import { ArrowDown, ArrowUp, CaseSensitive, Regex, Replace, WholeWord, X } from 'lucide-react';
 import { IconButton } from '../../ui/IconButton';
 import { CacheDeTokens } from './cache';
 import { linguagemPorNome } from './linguagens';
 import type { Linguagem, Token } from './tokens';
+import { f, useTextos } from '../textos';
 
 // ============================================================================
 // Tipos
@@ -43,9 +46,25 @@ import type { Linguagem, Token } from './tokens';
 export interface PosicaoNoCodigo {
   linha: number;
   coluna: number;
+  /** Deslocamentos absolutos da seleção no texto (2026-10-31; ausentes em chamadores antigos). */
+  ini?: number;
+  fim?: number;
+}
+
+/** Comandos que o pai dispara sobre o texto (a barra de ferramentas no modo Código — dono, 2026-10-31). */
+export interface XEditorDeCodigoHandle {
+  selecao: () => { ini: number; fim: number };
+  /** Substitui `[ini, fim)` por `texto` preservando o desfazer nativo, e deixa a seleção onde pedido. Foca o editor. */
+  substituir: (pIni: number, pFim: number, pTexto: string, pSelecao?: { ini: number; fim: number }) => void;
+  /** Posiciona o cursor (sem roubar o foco, salvo `pFocar`); rola até ele. */
+  posicionarCursor: (pIni: number, pFim?: number, pFocar?: boolean) => void;
+  focar: () => void;
+  desfazer: () => void;
+  refazer: () => void;
 }
 
 export interface XEditorDeCodigoProps {
+  ref?: Ref<XEditorDeCodigoHandle>;
   valor: string;
   aoMudar: (pValor: string) => void;
   /** Nome ou apelido da linguagem (`typescript`, `cs`, `sql`…); desconhecida ⇒ texto puro. */
@@ -70,6 +89,11 @@ export interface XEditorDeCodigoProps {
   className?: string;
   aoFocar?: () => void;
   aoDesfocar?: () => void;
+  /**
+   * Cursor VIRTUAL (modo dividido, 2026-10-31): posição no texto que o outro lado (o visual) aponta. Desenha um traço
+   * e destaca a linha, e rola até lá, sem mexer no foco nem na seleção real. `null` apaga.
+   */
+  cursorVirtual?: number | null;
   /** Teclas que o pai quer interceptar antes (devolve `true` se tratou). */
   aoTeclar?: (pEvento: KeyboardEvent<HTMLTextAreaElement>) => boolean;
 }
@@ -239,6 +263,7 @@ const LinhaRealcada = memo(function LinhaRealcada({ texto, tokens, numero, largu
 // ============================================================================
 
 export function XEditorDeCodigo({
+  ref,
   valor,
   aoMudar,
   linguagem,
@@ -256,6 +281,7 @@ export function XEditorDeCodigo({
   className = '',
   aoFocar,
   aoDesfocar,
+  cursorVirtual = null,
   aoTeclar,
 }: XEditorDeCodigoProps): JSX.Element {
   const id = useId();
@@ -266,6 +292,7 @@ export function XEditorDeCodigo({
   const [rolagem, setRolagem] = useState({ top: 0, left: 0 });
   const [alturaVisivel, setAlturaVisivel] = useState(400);
   const [cursor, setCursor] = useState<{ ini: number; fim: number }>({ ini: 0, fim: 0 });
+  const tc = useTextos().codigo;
   const [busca, setBusca] = useState({ aberta: false, termo: '', substituicao: '', caixa: false, palavra: false, regex: false, atual: 0, comSubstituir: false });
   const [irPara, setIrPara] = useState<string | null>(null);
   const campoDeBusca = useRef<HTMLInputElement>(null);
@@ -348,7 +375,7 @@ export function XEditorDeCodigo({
     if (aoMoverCursor) {
       const linha = linhaDaPosicao(a.value, ini);
       const coluna = ini - inicioDaLinha(a.value, ini);
-      aoMoverCursor({ linha: linha + 1, coluna: coluna + 1 });
+      aoMoverCursor({ linha: linha + 1, coluna: coluna + 1, ini, fim });
     }
   }, [aoMoverCursor]);
 
@@ -374,6 +401,42 @@ export function XEditorDeCodigo({
     else if (x + metricas.larguraDoCaractere * 2 > c.scrollLeft + c.clientWidth)
       c.scrollLeft = x + metricas.larguraDoCaractere * 4 - c.clientWidth;
   }, [larguraDaGutter, metricas, quebrarLinhas]);
+
+  // ------------------------------------------------------------------- handle
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      selecao: () => {
+        const a = area.current;
+        return a ? { ini: a.selectionStart, fim: a.selectionEnd } : { ini: 0, fim: 0 };
+      },
+      substituir: (pIni, pFim, pTexto, pSelecao) => {
+        const a = area.current;
+        if (!a || somenteLeitura)
+          return;
+        inserirNoTextarea(a, pTexto, pIni, pFim);
+        const sel = pSelecao ?? { ini: pIni + pTexto.length, fim: pIni + pTexto.length };
+        a.setSelectionRange(sel.ini, sel.fim);
+        atualizarCursor();
+        requestAnimationFrame(revelarCursor);
+      },
+      posicionarCursor: (pIni, pFim = pIni, pFocar = false) => {
+        const a = area.current;
+        if (!a)
+          return;
+        if (pFocar)
+          a.focus({ preventScroll: true });
+        a.setSelectionRange(pIni, pFim);
+        atualizarCursor();
+        revelarCursor();
+      },
+      focar: () => area.current?.focus({ preventScroll: true }),
+      desfazer: () => { area.current?.focus({ preventScroll: true }); document.execCommand('undo'); },
+      refazer: () => { area.current?.focus({ preventScroll: true }); document.execCommand('redo'); },
+    }),
+    [atualizarCursor, revelarCursor, somenteLeitura],
+  );
 
   // ------------------------------------------------------------------- edição
 
@@ -718,8 +781,27 @@ export function XEditorDeCodigo({
     [larguraDaGutter, linhas, metricas, quebrarLinhas, valor],
   );
 
+  // Cursor virtual: rola até a linha quando ela sai da área visível.
+  useEffect(() => {
+    const c = contenedor.current;
+    if (c === null || cursorVirtual === null || quebrarLinhas)
+      return;
+    const linha = linhaDaPosicao(valor, cursorVirtual);
+    const topo = linha * metricas.alturaDaLinha;
+    const base = topo + metricas.alturaDaLinha;
+    if (topo < c.scrollTop || base > c.scrollTop + c.clientHeight)
+      c.scrollTop = Math.max(0, topo - c.clientHeight / 2 + metricas.alturaDaLinha / 2);
+  }, [cursorVirtual, metricas.alturaDaLinha, quebrarLinhas, valor]);
+
   const decoracoes: ReactNode[] = [];
   if (!quebrarLinhas) {
+    if (cursorVirtual !== null) {
+      const caixa = caixaDe(Math.min(cursorVirtual, valor.length), 0);
+      if (caixa) {
+        decoracoes.push(<div key="linha-virtual" className="adc-codigo-linha-virtual" style={{ top: caixa.top, height: metricas.alturaDaLinha }} />);
+        decoracoes.push(<div key="cursor-virtual" className="adc-codigo-cursor-virtual" style={{ top: caixa.top, left: caixa.left, height: metricas.alturaDaLinha }} aria-hidden="true" />);
+      }
+    }
     if (pares) {
       for (const p of [pares.abre, pares.fecha]) {
         const caixa = caixaDe(p, 1);
@@ -782,8 +864,8 @@ export function XEditorDeCodigo({
               id={`${id}-busca`}
               className="adc-codigo-busca-campo"
               value={busca.termo}
-              placeholder="Localizar"
-              aria-label="Localizar no código"
+              placeholder={tc.localizar}
+              aria-label={tc.localizarNoCodigo}
               onChange={(pE) => setBusca((pB) => ({ ...pB, termo: pE.target.value, atual: 0 }))}
               onKeyDown={(pE) => {
                 if (pE.key === 'Enter') {
@@ -797,29 +879,29 @@ export function XEditorDeCodigo({
               }}
             />
             <span className="adc-codigo-busca-contagem" aria-live="polite">
-              {busca.termo === '' ? '' : total === 0 ? 'Nenhuma ocorrência' : `${busca.atual + 1} de ${total}`}
+              {busca.termo === '' ? '' : total === 0 ? tc.nenhumaOcorrencia : f(tc.nDeTotal, busca.atual + 1, total)}
             </span>
-            <IconButton aria-label="Diferenciar maiúsculas" hint="Aa: só ocorrências com a mesma caixa" aria-pressed={busca.caixa} className={busca.caixa ? 'adc-ligado' : ''} onClick={() => setBusca((pB) => ({ ...pB, caixa: !pB.caixa, atual: 0 }))}>
+            <IconButton aria-label={tc.diferenciarMaiusculas} hint={tc.diferenciarMaiusculasDica} aria-pressed={busca.caixa} className={busca.caixa ? 'adc-ligado' : ''} onClick={() => setBusca((pB) => ({ ...pB, caixa: !pB.caixa, atual: 0 }))}>
               <CaseSensitive size={16} />
             </IconButton>
-            <IconButton aria-label="Palavra inteira" hint="Só palavras inteiras" aria-pressed={busca.palavra} className={busca.palavra ? 'adc-ligado' : ''} onClick={() => setBusca((pB) => ({ ...pB, palavra: !pB.palavra, atual: 0 }))}>
+            <IconButton aria-label={tc.palavraInteira} hint={tc.palavraInteiraDica} aria-pressed={busca.palavra} className={busca.palavra ? 'adc-ligado' : ''} onClick={() => setBusca((pB) => ({ ...pB, palavra: !pB.palavra, atual: 0 }))}>
               <WholeWord size={16} />
             </IconButton>
-            <IconButton aria-label="Expressão regular" hint="O termo é uma expressão regular" aria-pressed={busca.regex} className={busca.regex ? 'adc-ligado' : ''} onClick={() => setBusca((pB) => ({ ...pB, regex: !pB.regex, atual: 0 }))}>
+            <IconButton aria-label={tc.expressaoRegular} hint={tc.expressaoRegularDica} aria-pressed={busca.regex} className={busca.regex ? 'adc-ligado' : ''} onClick={() => setBusca((pB) => ({ ...pB, regex: !pB.regex, atual: 0 }))}>
               <Regex size={16} />
             </IconButton>
-            <IconButton aria-label="Ocorrência anterior" shortcut="Shift+Enter" onClick={() => irParaOcorrencia(busca.atual - 1)} disabled={total === 0}>
+            <IconButton aria-label={tc.ocorrenciaAnterior} shortcut="Shift+Enter" onClick={() => irParaOcorrencia(busca.atual - 1)} disabled={total === 0}>
               <ArrowUp size={16} />
             </IconButton>
-            <IconButton aria-label="Próxima ocorrência" shortcut="Enter" onClick={() => irParaOcorrencia(busca.atual + 1)} disabled={total === 0}>
+            <IconButton aria-label={tc.proximaOcorrencia} shortcut="Enter" onClick={() => irParaOcorrencia(busca.atual + 1)} disabled={total === 0}>
               <ArrowDown size={16} />
             </IconButton>
             {!somenteLeitura && (
-              <IconButton aria-label="Substituir" hint="Mostra o campo de substituição" shortcut="Ctrl+H" aria-pressed={busca.comSubstituir} className={busca.comSubstituir ? 'adc-ligado' : ''} onClick={() => setBusca((pB) => ({ ...pB, comSubstituir: !pB.comSubstituir }))}>
+              <IconButton aria-label={tc.substituir} hint={tc.substituirDica} shortcut="Ctrl+H" aria-pressed={busca.comSubstituir} className={busca.comSubstituir ? 'adc-ligado' : ''} onClick={() => setBusca((pB) => ({ ...pB, comSubstituir: !pB.comSubstituir }))}>
                 <Replace size={16} />
               </IconButton>
             )}
-            <IconButton aria-label="Fechar a busca" shortcut="Esc" onClick={() => { setBusca((pB) => ({ ...pB, aberta: false })); area.current?.focus(); }}>
+            <IconButton aria-label={tc.fecharBusca} shortcut="Esc" onClick={() => { setBusca((pB) => ({ ...pB, aberta: false })); area.current?.focus(); }}>
               <X size={16} />
             </IconButton>
           </div>
@@ -828,8 +910,8 @@ export function XEditorDeCodigo({
               <input
                 className="adc-codigo-busca-campo"
                 value={busca.substituicao}
-                placeholder="Substituir por"
-                aria-label="Substituir por"
+                placeholder={tc.substituirPor}
+                aria-label={tc.substituirPor}
                 onChange={(pE) => setBusca((pB) => ({ ...pB, substituicao: pE.target.value }))}
                 onKeyDown={(pE) => {
                   if (pE.key === 'Enter') {
@@ -842,10 +924,10 @@ export function XEditorDeCodigo({
                 }}
               />
               <button type="button" className="adc-codigo-busca-botao" onClick={substituirAtual} disabled={total === 0}>
-                Substituir
+                {tc.substituir}
               </button>
               <button type="button" className="adc-codigo-busca-botao" onClick={substituirTodas} disabled={total === 0}>
-                Substituir todas
+                {tc.substituirTodas}
               </button>
             </div>
           )}
@@ -853,15 +935,15 @@ export function XEditorDeCodigo({
       )}
 
       {irPara !== null && (
-        <div className="adc-codigo-busca" role="dialog" aria-label="Ir para a linha">
+        <div className="adc-codigo-busca" role="dialog" aria-label={tc.irParaLinha}>
           <div className="adc-codigo-busca-linha">
             <input
               ref={campoIrPara}
               className="adc-codigo-busca-campo"
               value={irPara}
               inputMode="numeric"
-              placeholder={`Ir para a linha (1 a ${linhas.length})`}
-              aria-label="Número da linha"
+              placeholder={f(tc.irParaLinhaPlaceholder, linhas.length)}
+              aria-label={tc.numeroDaLinha}
               onChange={(pE) => setIrPara(pE.target.value.replace(/\D/g, ''))}
               onKeyDown={(pE) => {
                 if (pE.key === 'Enter') {
@@ -875,9 +957,9 @@ export function XEditorDeCodigo({
               }}
             />
             <button type="button" className="adc-codigo-busca-botao" onClick={confirmarIrPara}>
-              Ir
+              {tc.ir}
             </button>
-            <IconButton aria-label="Fechar" shortcut="Esc" onClick={() => { setIrPara(null); area.current?.focus(); }}>
+            <IconButton aria-label={tc.fechar} shortcut="Esc" onClick={() => { setIrPara(null); area.current?.focus(); }}>
               <X size={16} />
             </IconButton>
           </div>
