@@ -21,8 +21,8 @@ import { XApplicationMode, XButtonColor, XUIEditorType } from '@core/types';
 import type { XFormView as XFormViewType, XRowAction } from '@core/types';
 import { XFormView } from './XFormView';
 import { ZIndexManager } from '@core/lib/zIndexManager';
-import { useMolduraDeModal, chaveDoQuadroDoFormulario, type QuadroDeModal } from '@core/hooks/useMolduraDeModal';
-import { usePreferenciaDoUsuario } from '@core/hooks/usePreferenciaDoUsuario';
+import { useMolduraDeModal } from '@core/hooks/useMolduraDeModal';
+import { useQuadroDoFormulario } from '@core/hooks/useQuadroDoFormulario';
 import { useDevice } from '@core/hooks/useDevice';
 import { useRecalculoAoDigitar } from '@core/hooks/useRecalculoAoDigitar';
 import { pisoDoFormularioPx, alturaDoCorpoPx, temCampoElastico, MODAL_MAX_PERCENT } from '@core/lib/formScale';
@@ -104,8 +104,7 @@ export function XFormModal({
   // redimensionar pelas bordas. Posição e tamanho ficam no PERFIL do usuário, por formulário, e voltam na
   // próxima abertura. No celular o modal é cheio (FE-0): nada se arrasta nem se restaura.
   const { isMobile: ehCelular } = useDevice();
-  const [quadroSalvo, salvarQuadro] = usePreferenciaDoUsuario<QuadroDeModal | null>(
-    chaveDoQuadroDoFormulario(formView.name || 'formulario'), null);
+  const [quadroSalvo, salvarQuadro] = useQuadroDoFormulario(formView.name || 'formulario');
   const moldura = useMolduraDeModal({
     arrastavel: !ehCelular, redimensionavel: !ehCelular, aberto: isOpen,
     quadroSalvo: ehCelular ? null : quadroSalvo, aoMudarQuadro: salvarQuadro,
