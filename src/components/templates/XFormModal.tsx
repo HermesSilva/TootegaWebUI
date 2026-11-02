@@ -30,7 +30,7 @@ import { FormBusyProvider } from '@core/contexts/FormBusyContext';
 import { FormValuesProvider } from '@core/contexts/FormValuesContext';
 import { XFormBusyVeil } from './XFormBusyVeil';
 import { XHint } from '@core/components/ui/XHint';
-import { CLOSE_BUTTON_STYLE, aplicarTotaisAoVivo, aplicarValoresDirigidos, errosDoPrecoDoItem, getFieldValue, isVisible } from '@core/lib';
+import { CLOSE_BUTTON_STYLE, aplicarTotaisAoVivo, aplicarValoresDirigidos, errosDasRegrasDaGrade, errosDoPrecoDoItem, getFieldValue, isVisible } from '@core/lib';
 import { XBUTTON_PALETTE } from '@core/lib/xButtonPalette';
 
 // ============================================================================
@@ -284,6 +284,9 @@ export function XFormModal({
     // O PREÇO DO ITEM fora da regra (igual ou maior que o unitário) não grava: o desconto sairia de um preço que a
     // regra recusa. A frase nomeia todos os itens de uma vez, no campo da grade.
     Object.assign(newErrors, errosDoPrecoDoItem(formView.sections.flatMap((pS) => pS.fields), formData));
+
+    // As células fora do formato que a própria linha pede (o tipo do contato decide o valor).
+    Object.assign(newErrors, errosDasRegrasDaGrade(formView.sections.flatMap((pS) => pS.fields), formData));
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;

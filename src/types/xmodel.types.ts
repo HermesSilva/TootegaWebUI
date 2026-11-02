@@ -689,6 +689,12 @@ export interface XUIGridColumn {
   width: number;
   /** Valor com que a célula nasce numa linha nova, em texto. Vazio ⇒ o padrão do tipo da coluna. */
   defaultValue?: string;
+  /** Coluna da mesma linha que decide o formato desta, pelas `rules`. Vazio ⇒ sem validação por linha. */
+  ruleField?: string;
+  /** Uma regra por valor de `ruleField`: o formato exigido, a frase do erro e se a célula leva máscara. */
+  rules?: { value: string; pattern: string; message: string; masked: boolean }[];
+  /** Coluna de marcar da mesma linha: desmarcada, as `rules` não se cobram. */
+  ruleActiveField?: string;
   /**
    * Linha em que a coluna aparece dentro de cada item (0 = primeira). Todas em zero ⇒ tabela comum;
    * havendo linha > 0, cada item ocupa várias fileiras (cadastro largo, como o endereço).
