@@ -578,8 +578,14 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
   /** Uma linha nova a partir do item escolhido, com os `fieldBindings` do modelo aplicados. */
   const linhaDoItem = (pItem: Record<string, unknown>): Row => {
     const nova = novaLinha(colunas);
-    for (const binding of editor.editor.fieldBindings ?? [])
-      nova[binding.targetField] = pItem[binding.sourceField];
+    // O contrato de lookup tem posições fixas no item (value/text/group/detail) e um dicionário `columns` para o
+    // resto: o vínculo procura nos dois, como o seletor faz para desenhar a própria grade. Ler só o topo fazia a nota
+    // do MDF-e, que traz número e destinatário em `columns`, aparecer no seletor e entrar na grade como linha vazia.
+    const extras = pItem.columns as Record<string, unknown> | undefined;
+    for (const binding of editor.editor.fieldBindings ?? []) {
+      const noItem = getFieldValue(pItem, binding.sourceField);
+      nova[binding.targetField] = noItem !== undefined ? noItem : getFieldValue(extras, binding.sourceField);
+    }
     // Com o preço unitário já ligado, o preço final nasce = preço unitário (sem desconto).
     return aplicarCalculos(nova, '');
   };
