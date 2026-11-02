@@ -1,17 +1,19 @@
 /**
  * XDialogoDoEditor — os diálogos do editor (link, imagem, tabela, referência, nota de rodapé, atributo, tecla,
  * âncora). Todos CONTIDOS na área do editor (`XModalShell` inline — skill tootega-front §1); nenhum cobre a página.
- * Validação completa: cada campo recusado mostra o motivo embaixo, de uma vez.
+ * Validação completa: cada campo recusado mostra o motivo embaixo, de uma vez. Textos do catálogo (`useTextos`).
  */
 
 import { useMemo, useState, type FormEvent, type JSX } from 'react';
 import { XModalShell } from '../templates/XModalShell';
 import { Button } from '../ui/Button';
 import type { PedidoDeDialogo } from './wysiwyg/XVistaWYSIWYG';
-import type { Bloco, Documento, Imagem } from './modelo/tipos';
-import { atomo, encontrarBloco, fatiarInline, folhaPorID, novoID, textoPuro } from './modelo/documento';
+import type { Bloco, Documento, Imagem, NotacaoDeFormula } from './modelo/tipos';
+import { atomo, atributoDoCabecalho, encontrarBloco, fatiarInline, folhaPorID, notacaoEfetiva, novoID, textoPuro } from './modelo/documento';
+import { XFormula } from './wysiwyg/XFormula';
 import { ordenarSelecao, type Selecao } from './editor/selecao';
 import { alternarMarca, atualizarBloco, inserirAtomo, inserirBlocosNaSelecao, inserirTexto, novaTabela, type Resultado } from './editor/transacoes';
+import { useTextos } from './textos';
 
 export interface XDialogoDoEditorProps {
   pedido: PedidoDeDialogo;
@@ -19,6 +21,70 @@ export interface XDialogoDoEditorProps {
   selecao: Selecao | null;
   aoFechar: () => void;
   aoAplicar: (pResultado: Resultado) => void;
+  /**
+   * Modo Código (2026-10-31): em vez de uma transação no modelo, o diálogo entrega a SINTAXE AsciiDoc do que foi
+   * pedido; `pEmBloco` diz se o trecho ocupa linhas próprias (imagem, tabela, atributo) ou entra na linha.
+   */
+  aoInserirTexto?: (pTexto: string, pEmBloco: boolean) => void;
+  /** Texto selecionado no código, para preencher o campo de texto do link/referência. */
+  textoInicial?: string;
+}
+
+/** A sintaxe AsciiDoc de cada pedido, a partir dos campos do diálogo (modo Código). */
+export function textoDoPedido(pTipo: PedidoDeDialogo['tipo'], pCampos: Record<string, string>): { texto: string; emBloco: boolean } {
+  const c = (pNome: string): string => (pCampos[pNome] ?? '').trim();
+  switch (pTipo) {
+    case 'link': {
+      const alvo = c('alvo');
+      const texto = pCampos.texto ?? '';
+      const comEsquema = /^[a-z][a-z0-9+.-]*:/i.test(alvo);
+      if (comEsquema)
+        return { texto: texto ? `${alvo}[${texto}]` : alvo, emBloco: false };
+      return { texto: `link:${alvo}[${texto}]`, emBloco: false };
+    }
+    case 'imagem': {
+      const partes = [c('alt'), c('largura'), c('altura')];
+      while (partes.length > 0 && partes[partes.length - 1] === '')
+        partes.pop();
+      return { texto: `image::${c('alvo')}[${partes.join(',')}]`, emBloco: true };
+    }
+    case 'tabela': {
+      const linhas = Math.max(1, Number(c('linhas')) || 1);
+      const colunas = Math.max(1, Number(c('colunas')) || 1);
+      const cabecalho = pCampos.cabecalho !== 'nao';
+      const linha = (): string => Array.from({ length: colunas }, () => '| ').join('');
+      const corpo: string[] = [];
+      if (cabecalho) {
+        corpo.push(linha().trimEnd(), '');
+        for (let i = 1; i < linhas; i++)
+          corpo.push(linha().trimEnd());
+      } else
+        for (let i = 0; i < linhas; i++)
+          corpo.push(linha().trimEnd());
+      return { texto: `|===\n${corpo.join('\n')}\n|===`, emBloco: true };
+    }
+    case 'referencia':
+      return { texto: c('texto') ? `<<${c('id')},${c('texto')}>>` : `<<${c('id')}>>`, emBloco: false };
+    case 'notaDeRodape':
+      return { texto: `footnote:${c('id')}[${pCampos.texto ?? ''}]`, emBloco: false };
+    case 'atributo':
+      return { texto: `:${c('nome')}: ${pCampos.valor ?? ''}`.trimEnd(), emBloco: true };
+    case 'tecla': {
+      const especie = pCampos.especie === 'botao' ? 'btn' : pCampos.especie === 'menu' ? 'menu' : 'kbd';
+      return { texto: especie === 'menu' ? `menu:${c('alvo')}[${c('texto')}]` : `${especie}:[${c('texto')}]`, emBloco: false };
+    }
+    case 'ancora':
+      return { texto: c('texto') ? `[[${c('id')},${c('texto')}]]` : `[[${c('id')}]]`, emBloco: false };
+    case 'formula': {
+      const notacao = c('notacao') || 'stem';
+      const texto = c('texto');
+      if (pCampos.forma === 'bloco')
+        return { texto: `[${notacao}]\n++++\n${texto}\n++++`, emBloco: true };
+      return { texto: `${notacao}:[${texto}]`, emBloco: false };
+    }
+    default:
+      return { texto: '', emBloco: false };
+  }
 }
 
 function Campo({ rotulo, erro, children }: { rotulo: string; erro?: string; children: JSX.Element }): JSX.Element {
@@ -53,8 +119,11 @@ function idsDoDocumento(pDocumento: Documento): string[] {
   return [...ids];
 }
 
-export function XDialogoDoEditor({ pedido, documento, selecao, aoFechar, aoAplicar }: XDialogoDoEditorProps): JSX.Element {
+export function XDialogoDoEditor({ pedido, documento, selecao, aoFechar, aoAplicar, aoInserirTexto, textoInicial }: XDialogoDoEditorProps): JSX.Element {
+  const t = useTextos().dialogo;
   const textoSelecionado = useMemo(() => {
+    if (aoInserirTexto)
+      return textoInicial ?? '';
     if (!selecao)
       return '';
     const { inicio, fim } = ordenarSelecao(documento, selecao);
@@ -80,6 +149,8 @@ export function XDialogoDoEditor({ pedido, documento, selecao, aoFechar, aoAplic
     nome: '',
     valor: '',
     especie: 'tecla',
+    notacao: 'stem',
+    forma: 'inline',
   }));
   const [erros, setErros] = useState<Record<string, string>>({});
   const campo = (pNome: string) => ({
@@ -100,47 +171,57 @@ export function XDialogoDoEditor({ pedido, documento, selecao, aoFechar, aoAplic
 
     switch (pedido.tipo) {
       case 'link':
-        exigir('alvo', 'Informe o endereço do link (https://…, mailto:… ou um caminho).');
+        exigir('alvo', t.erros.informeEndereco);
         break;
       case 'imagem':
-        exigir('alvo', 'Informe o caminho ou a URL da imagem.');
+        exigir('alvo', t.erros.informeImagem);
         if (campos.largura && !/^\d+%?$/.test(campos.largura))
-          novosErros.largura = 'A largura é um número de pixels (ou percentual).';
+          novosErros.largura = t.erros.larguraNumero;
         if (campos.altura && !/^\d+$/.test(campos.altura))
-          novosErros.altura = 'A altura é um número de pixels.';
+          novosErros.altura = t.erros.alturaNumero;
         break;
       case 'tabela':
         if (!/^\d+$/.test(campos.linhas) || Number(campos.linhas) < 1 || Number(campos.linhas) > 200)
-          novosErros.linhas = 'Entre 1 e 200 linhas.';
+          novosErros.linhas = t.erros.linhasEntre;
         if (!/^\d+$/.test(campos.colunas) || Number(campos.colunas) < 1 || Number(campos.colunas) > 30)
-          novosErros.colunas = 'Entre 1 e 30 colunas.';
+          novosErros.colunas = t.erros.colunasEntre;
         break;
       case 'referencia':
-        exigir('id', 'Informe o id do destino (uma âncora ou seção do documento).');
+        exigir('id', t.erros.informeIdDestino);
         break;
       case 'notaDeRodape':
-        exigir('texto', 'Escreva o texto da nota.');
+        exigir('texto', t.erros.escrevaNota);
         break;
       case 'atributo':
-        exigir('nome', 'Informe o nome do atributo.');
+        exigir('nome', t.erros.informeNomeAtributo);
         if (campos.nome && !/^[A-Za-z0-9_][A-Za-z0-9_-]*$/.test(campos.nome))
-          novosErros.nome = 'O nome usa letras, números, hífen e sublinhado, sem espaços.';
+          novosErros.nome = t.erros.nomeAtributoFormato;
         break;
       case 'tecla':
-        exigir('texto', campos.especie === 'menu' ? 'Informe os itens do menu (ex.: Salvar como).' : 'Informe o texto.');
+        exigir('texto', campos.especie === 'menu' ? t.erros.informeItensMenu : t.erros.informeTexto);
         if (campos.especie === 'menu')
-          exigir('alvo', 'Informe o menu raiz (ex.: Arquivo).');
+          exigir('alvo', t.erros.informeMenuRaiz);
         break;
       case 'ancora':
-        exigir('id', 'Informe o id da âncora.');
+        exigir('id', t.erros.informeIdAncora);
         if (campos.id && !/^[A-Za-z_][A-Za-z0-9_.:-]*$/.test(campos.id))
-          novosErros.id = 'O id começa com letra e usa letras, números, ponto, hífen e sublinhado.';
+          novosErros.id = t.erros.idAncoraFormato;
+        break;
+      case 'formula':
+        exigir('texto', t.erros.informeFormula);
         break;
       default:
         break;
     }
     if (Object.keys(novosErros).length > 0) {
       setErros(novosErros);
+      return;
+    }
+
+    if (aoInserirTexto) {
+      const { texto, emBloco } = textoDoPedido(pedido.tipo, campos);
+      aoInserirTexto(texto, emBloco);
+      aoFechar();
       return;
     }
 
@@ -202,6 +283,16 @@ export function XDialogoDoEditor({ pedido, documento, selecao, aoFechar, aoAplic
         if (selecaoValida)
           resultado = inserirAtomo(documento, selecaoValida, atomo('ancora', campos.texto.trim() ? { id: campos.id.trim(), texto: campos.texto.trim() } : { id: campos.id.trim() }));
         break;
+      case 'formula':
+        if (selecaoValida) {
+          const notacao = (campos.notacao || 'stem') as NotacaoDeFormula;
+          const texto = campos.texto.trim();
+          resultado =
+            campos.forma === 'bloco'
+              ? inserirBlocosNaSelecao(documento, selecaoValida, [{ id: novoID(), tipo: 'formula', notacao, texto }])
+              : inserirAtomo(documento, selecaoValida, atomo('formula', { notacao, texto }));
+        }
+        break;
       default:
         break;
     }
@@ -211,62 +302,63 @@ export function XDialogoDoEditor({ pedido, documento, selecao, aoFechar, aoAplic
   };
 
   const titulo: Record<PedidoDeDialogo['tipo'], string> = {
-    link: 'Link',
-    imagem: imagemEditada ? 'Editar imagem' : 'Imagem',
-    tabela: 'Nova tabela',
-    referencia: 'Referência cruzada',
-    notaDeRodape: 'Nota de rodapé',
-    atributo: 'Atributo do documento',
-    tecla: 'Tecla, botão ou menu',
-    ancora: 'Âncora',
+    link: t.titulos.link,
+    imagem: imagemEditada ? t.titulos.editarImagem : t.titulos.imagem,
+    tabela: t.titulos.tabela,
+    referencia: t.titulos.referencia,
+    notaDeRodape: t.titulos.notaDeRodape,
+    atributo: t.titulos.atributo,
+    tecla: t.titulos.tecla,
+    ancora: t.titulos.ancora,
+    formula: t.titulos.formula,
   };
 
-  const semPosicao = !selecaoValida && !imagemEditada;
+  const semPosicao = !selecaoValida && !imagemEditada && !aoInserirTexto;
   const idDoFormulario = 'adc-dialogo-formulario';
 
   return (
     <XModalShell
       title={titulo[pedido.tipo]}
-      closeLabel="Cancelar"
+      closeLabel={t.cancelar}
       onClose={aoFechar}
       size="sm"
       footer={
         <div className="adc-dialogo-rodape">
           <Button type="button" variant="secondary" onClick={aoFechar}>
-            Cancelar
+            {t.cancelar}
           </Button>
           <Button type="submit" form={idDoFormulario} disabled={semPosicao}>
-            {pedido.tipo === 'imagem' && imagemEditada ? 'Aplicar' : 'Inserir'}
+            {pedido.tipo === 'imagem' && imagemEditada ? t.aplicar : t.inserir}
           </Button>
         </div>
       }
     >
       <form id={idDoFormulario} onSubmit={confirmar} className="adc-dialogo-campos">
-        {semPosicao && <p className="adc-dialogo-erro">Coloque o cursor no texto antes de inserir: o diálogo não sabe onde o elemento entra.</p>}
+        {semPosicao && <p className="adc-dialogo-erro">{t.semPosicao}</p>}
         {pedido.tipo === 'link' && (
           <>
-            <Campo rotulo="Endereço" erro={erros.alvo}>
-              <input autoFocus placeholder="https://… ou mailto:…" {...campo('alvo')} />
+            <Campo rotulo={t.endereco} erro={erros.alvo}>
+              <input autoFocus placeholder={t.enderecoPlaceholder} {...campo('alvo')} />
             </Campo>
-            <Campo rotulo="Texto (vazio usa o endereço)">
+            <Campo rotulo={t.textoVazioUsaEndereco}>
               <input {...campo('texto')} />
             </Campo>
           </>
         )}
         {pedido.tipo === 'imagem' && (
           <>
-            <Campo rotulo="Caminho ou URL" erro={erros.alvo}>
-              <input autoFocus placeholder="imagens/figura.png" {...campo('alvo')} />
+            <Campo rotulo={t.caminhoOuURL} erro={erros.alvo}>
+              <input autoFocus placeholder={t.imagemPlaceholder} {...campo('alvo')} />
             </Campo>
-            <Campo rotulo="Texto alternativo (acessibilidade)">
+            <Campo rotulo={t.textoAlternativo}>
               <input {...campo('alt')} />
             </Campo>
             <div className="adc-dialogo-linha">
-              <Campo rotulo="Largura" erro={erros.largura}>
-                <input inputMode="numeric" placeholder="px" {...campo('largura')} />
+              <Campo rotulo={t.largura} erro={erros.largura}>
+                <input inputMode="numeric" placeholder={t.px} {...campo('largura')} />
               </Campo>
-              <Campo rotulo="Altura" erro={erros.altura}>
-                <input inputMode="numeric" placeholder="px" {...campo('altura')} />
+              <Campo rotulo={t.altura} erro={erros.altura}>
+                <input inputMode="numeric" placeholder={t.px} {...campo('altura')} />
               </Campo>
             </div>
           </>
@@ -274,83 +366,108 @@ export function XDialogoDoEditor({ pedido, documento, selecao, aoFechar, aoAplic
         {pedido.tipo === 'tabela' && (
           <>
             <div className="adc-dialogo-linha">
-              <Campo rotulo="Linhas" erro={erros.linhas}>
+              <Campo rotulo={t.linhas} erro={erros.linhas}>
                 <input autoFocus inputMode="numeric" {...campo('linhas')} />
               </Campo>
-              <Campo rotulo="Colunas" erro={erros.colunas}>
+              <Campo rotulo={t.colunas} erro={erros.colunas}>
                 <input inputMode="numeric" {...campo('colunas')} />
               </Campo>
             </div>
-            <Campo rotulo="Primeira linha">
+            <Campo rotulo={t.primeiraLinha}>
               <select {...campo('cabecalho')}>
-                <option value="sim">É cabeçalho</option>
-                <option value="nao">É dado</option>
+                <option value="sim">{t.eCabecalho}</option>
+                <option value="nao">{t.eDado}</option>
               </select>
             </Campo>
           </>
         )}
         {pedido.tipo === 'referencia' && (
           <>
-            <Campo rotulo="Id do destino" erro={erros.id}>
-              <input autoFocus list="adc-ids" placeholder="secao-ou-ancora" {...campo('id')} />
+            <Campo rotulo={t.idDoDestino} erro={erros.id}>
+              <input autoFocus list="adc-ids" placeholder={t.idDoDestinoPlaceholder} {...campo('id')} />
             </Campo>
             <datalist id="adc-ids">
               {ids.map((pID) => (
                 <option key={pID} value={pID} />
               ))}
             </datalist>
-            <Campo rotulo="Texto (vazio usa o título do destino)">
+            <Campo rotulo={t.textoVazioUsaTitulo}>
               <input {...campo('texto')} />
             </Campo>
           </>
         )}
         {pedido.tipo === 'notaDeRodape' && (
           <>
-            <Campo rotulo="Texto da nota" erro={erros.texto}>
+            <Campo rotulo={t.textoDaNota} erro={erros.texto}>
               <textarea autoFocus rows={3} {...campo('texto')} />
             </Campo>
-            <Campo rotulo="Id (para reutilizar a nota)">
+            <Campo rotulo={t.idParaReutilizar}>
               <input {...campo('id')} />
             </Campo>
           </>
         )}
         {pedido.tipo === 'atributo' && (
           <>
-            <Campo rotulo="Nome" erro={erros.nome}>
-              <input autoFocus placeholder="versao" {...campo('nome')} />
+            <Campo rotulo={t.nome} erro={erros.nome}>
+              <input autoFocus placeholder={t.nomePlaceholder} {...campo('nome')} />
             </Campo>
-            <Campo rotulo="Valor">
+            <Campo rotulo={t.valor}>
               <input {...campo('valor')} />
             </Campo>
           </>
         )}
         {pedido.tipo === 'tecla' && (
           <>
-            <Campo rotulo="Elemento">
+            <Campo rotulo={t.elemento}>
               <select autoFocus {...campo('especie')}>
-                <option value="tecla">Tecla (kbd)</option>
-                <option value="botao">Botão (btn)</option>
-                <option value="menu">Menu (menu)</option>
+                <option value="tecla">{t.teclaKbd}</option>
+                <option value="botao">{t.botaoBtn}</option>
+                <option value="menu">{t.menuMenu}</option>
               </select>
             </Campo>
             {campos.especie === 'menu' && (
-              <Campo rotulo="Menu raiz" erro={erros.alvo}>
-                <input placeholder="Arquivo" {...campo('alvo')} />
+              <Campo rotulo={t.menuRaiz} erro={erros.alvo}>
+                <input placeholder={t.menuRaizPlaceholder} {...campo('alvo')} />
               </Campo>
             )}
-            <Campo rotulo={campos.especie === 'menu' ? 'Itens (separe com >)' : 'Texto'} erro={erros.texto}>
-              <input placeholder={campos.especie === 'menu' ? 'Salvar como > PDF' : campos.especie === 'botao' ? 'OK' : 'Ctrl+S'} {...campo('texto')} />
+            <Campo rotulo={campos.especie === 'menu' ? t.itensSepareCom : t.texto} erro={erros.texto}>
+              <input placeholder={campos.especie === 'menu' ? t.menuPlaceholder : campos.especie === 'botao' ? t.botaoPlaceholder : t.teclaPlaceholder} {...campo('texto')} />
             </Campo>
           </>
         )}
         {pedido.tipo === 'ancora' && (
           <>
-            <Campo rotulo="Id" erro={erros.id}>
-              <input autoFocus placeholder="minha-ancora" {...campo('id')} />
+            <Campo rotulo={t.id} erro={erros.id}>
+              <input autoFocus placeholder={t.ancoraPlaceholder} {...campo('id')} />
             </Campo>
-            <Campo rotulo="Rótulo (opcional)">
+            <Campo rotulo={t.rotuloOpcional}>
               <input {...campo('texto')} />
             </Campo>
+          </>
+        )}
+        {pedido.tipo === 'formula' && (
+          <>
+            <Campo rotulo={t.notacao}>
+              <select autoFocus {...campo('notacao')}>
+                <option value="stem">{t.notacaoStem}</option>
+                <option value="latexmath">{t.notacaoLatex}</option>
+                <option value="asciimath">{t.notacaoAsciimath}</option>
+              </select>
+            </Campo>
+            <Campo rotulo={t.fonteDaFormula} erro={erros.texto}>
+              <textarea rows={3} placeholder={t.formulaPlaceholder} spellCheck={false} {...campo('texto')} />
+            </Campo>
+            <Campo rotulo={t.forma}>
+              <select {...campo('forma')}>
+                <option value="inline">{t.formaInline}</option>
+                <option value="bloco">{t.formaBloco}</option>
+              </select>
+            </Campo>
+            {campos.texto.trim() !== '' && (
+              <div className="adc-dialogo-previa" aria-label={t.previa}>
+                <XFormula fonte={campos.texto} notacao={notacaoEfetiva((campos.notacao || 'stem') as NotacaoDeFormula, atributoDoCabecalho(documento, 'stem'))} bloco={campos.forma === 'bloco'} />
+              </div>
+            )}
           </>
         )}
       </form>

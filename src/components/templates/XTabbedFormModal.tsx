@@ -46,12 +46,12 @@ import { api } from '@core/lib/api';
 import { ZIndexManager } from '@core/lib/zIndexManager';
 import { XBUTTON_PALETTE } from '@core/lib/xButtonPalette';
 import { XHint } from '@core/components/ui/XHint';
-import { useDevice, useMolduraDeModal, usePreferenciaDoUsuario, chaveDoQuadroDoFormulario, type QuadroDeModal } from '@core/hooks';
+import { useDevice, useMolduraDeModal, useQuadroDoFormulario } from '@core/hooks';
 import { FormBusyProvider } from '@core/contexts/FormBusyContext';
 import { FormValuesProvider } from '@core/contexts/FormValuesContext';
 import { XFormBusyVeil } from './XFormBusyVeil';
 import { pisoDoFormularioPx, alturaDoCorpoPx, temCampoElastico, ehCampoElastico, MODAL_MAX_PERCENT } from '@core/lib/formScale';
-import { CLOSE_BUTTON_STYLE, aplicarTotaisAoVivo, aplicarValoresDirigidos, errosDoPrecoDoItem, formatCurrency, formatDate, formatDateTime, formatDecimal, formatDocument, formatPercentage, getFieldValue, gridAlignmentClass, isTruthy, isVisible } from '@core/lib';
+import { CLOSE_BUTTON_STYLE, aplicarTotaisAoVivo, aplicarValoresDirigidos, errosDasRegrasDaGrade, errosDoPrecoDoItem, formatCurrency, formatDate, formatDateTime, formatDecimal, formatDocument, formatPercentage, getFieldValue, gridAlignmentClass, isTruthy, isVisible } from '@core/lib';
 
 // ============================================================================
 // Types
@@ -1455,8 +1455,7 @@ export function XTabbedFormModal({
   // redimensionar pelas bordas. Posição e tamanho ficam no PERFIL do usuário, por formulário, e voltam na
   // próxima abertura. No celular o modal é cheio (FE-0): nada se arrasta nem se restaura.
   const { isMobile: ehCelular } = useDevice();
-  const [quadroSalvo, salvarQuadro] = usePreferenciaDoUsuario<QuadroDeModal | null>(
-    chaveDoQuadroDoFormulario(formView.name || 'formulario-em-abas'), null);
+  const [quadroSalvo, salvarQuadro] = useQuadroDoFormulario(formView.name || 'formulario-em-abas');
   const moldura = useMolduraDeModal({
     arrastavel: !ehCelular, redimensionavel: !ehCelular, aberto: isOpen,
     quadroSalvo: ehCelular ? null : quadroSalvo, aoMudarQuadro: salvarQuadro,
@@ -1607,6 +1606,13 @@ export function XTabbedFormModal({
     const dosPrecos = errosDoPrecoDoItem(camposDasAbas, formData);
     if (Object.keys(dosPrecos).length > 0) {
       Object.assign(newErrors, dosPrecos);
+      isValid = false;
+    }
+
+    // As células fora do formato que a própria linha pede (o tipo do contato decide o valor).
+    const dasRegras = errosDasRegrasDaGrade(camposDasAbas, formData);
+    if (Object.keys(dasRegras).length > 0) {
+      Object.assign(newErrors, dasRegras);
       isValid = false;
     }
 

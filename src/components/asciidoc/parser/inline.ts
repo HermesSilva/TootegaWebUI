@@ -30,9 +30,32 @@ const MARCA_DO_DELIMITADOR: Record<string, TipoDeMarca> = {
   '#': 'realce',
 };
 
-const MACROS = /^(image|link|xref|mailto|footnote|kbd|btn|menu|pass|anchor|icon|indexterm):([^[\s]*)\[/;
+const MACROS = /^(image|link|xref|mailto|footnote|kbd|btn|menu|pass|anchor|icon|indexterm|stem|latexmath|asciimath):([^[\s]*)\[/;
 const URL = /^(https?|ftp|irc|file):\/\/[^\s[\]<>]+/;
 const EMAIL = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
+
+/**
+ * Todos os pares de colchetes do texto, de uma passada só: abertura → fechamento. Uma varredura por abertura era
+ * quadrática numa linha cheia de colchetes sem fechar. Quebra de linha desfaz os abertos, e `\` escapa o seguinte.
+ */
+function paresDeColchetes(pTexto: string): Map<number, number> {
+  const pares = new Map<number, number>();
+  const abertos: number[] = [];
+  for (let i = 0; i < pTexto.length; i++) {
+    const c = pTexto[i];
+    if (c === '\\')
+      i += 1;
+    else if (c === '[')
+      abertos.push(i);
+    else if (c === ']') {
+      const abre = abertos.pop();
+      if (abre !== undefined)
+        pares.set(abre, i);
+    } else if (c === '\n')
+      abertos.length = 0;
+  }
+  return pares;
+}
 
 /** Acha o `]` que fecha o colchete aberto em `pAbre`, respeitando aninhamento. -1 se não fecha. */
 function fechamentoDoColchete(pTexto: string, pAbre: number): number {
@@ -74,9 +97,33 @@ interface Resultado {
 
 class ScannerInline {
   private readonly texto: string;
+  /** Os memos abaixo mantêm o scanner linear: sem eles, cada delimitador sem par varria o resto do texto. */
+  private pares: Map<number, number> | null = null;
+  private readonly ocorrencias = new Map<string, { de: number; achado: number }>();
+  /** Delimitador + fim do trecho → menor início já varrido até o fim sem achar fechamento. */
+  private readonly semFechamento = new Map<number, number>();
 
   constructor(pTexto: string) {
     this.texto = pTexto;
+  }
+
+  /** O colchete que fecha `pAbre`. Um colchete logo após `\` fica fora da passada única: vale a varredura direta. */
+  private colchete(pAbre: number): number {
+    if (this.texto[pAbre - 1] === '\\')
+      return fechamentoDoColchete(this.texto, pAbre);
+    if (this.pares === null)
+      this.pares = paresDeColchetes(this.texto);
+    return this.pares.get(pAbre) ?? -1;
+  }
+
+  /** `indexOf` que lembra a última resposta: a próxima ocorrência não muda enquanto a busca não a ultrapassa. */
+  private proxima(pMarcador: string, pDe: number): number {
+    const lembrada = this.ocorrencias.get(pMarcador);
+    if (lembrada && pDe >= lembrada.de && (lembrada.achado === -1 || pDe <= lembrada.achado))
+      return lembrada.achado;
+    const achado = this.texto.indexOf(pMarcador, pDe);
+    this.ocorrencias.set(pMarcador, { de: pDe, achado });
+    return achado;
   }
 
   analisar(pIni: number, pFim: number, pMarcas: Marca[]): Inline[] {
@@ -136,7 +183,7 @@ class ScannerInline {
       const macro = MACROS.exec(trecho);
       if (macro) {
         const abre = pI + macro[0].length - 1;
-        const fecha = fechamentoDoColchete(s, abre);
+        const fecha = this.colchete(abre);
         if (fecha !== -1 && fecha < pFim) {
           const partes = this.macro(macro[1], macro[2], s.slice(abre + 1, fecha), pMarcas);
           if (partes)
@@ -152,7 +199,7 @@ class ScannerInline {
           alvo = alvo.slice(0, -1);
         let fim = pI + alvo.length;
         if (s[fim] === '[') {
-          const fecha = fechamentoDoColchete(s, fim);
+          const fecha = this.colchete(fim);
           if (fecha !== -1 && fecha < pFim) {
             const atributos = lerAtributos(s.slice(fim + 1, fecha));
             const rotulo = atributos.posicionais[0] ?? '';
@@ -171,8 +218,9 @@ class ScannerInline {
 
     // `<<alvo,texto>>` referência cruzada.
     if (c === '<' && s[pI + 1] === '<') {
-      const fecha = s.indexOf('>>', pI + 2);
-      if (fecha !== -1 && fecha < pFim && !s.slice(pI + 2, fecha).includes('\n')) {
+      const fecha = this.proxima('>>', pI + 2);
+      const quebra = this.proxima('\n', pI + 2);
+      if (fecha !== -1 && fecha < pFim && (quebra === -1 || quebra > fecha)) {
         const miolo = s.slice(pI + 2, fecha);
         const virgula = miolo.indexOf(',');
         const dados: Record<string, string> = virgula === -1 ? { alvo: miolo.trim() } : { alvo: miolo.slice(0, virgula).trim(), texto: miolo.slice(virgula + 1).trim() };
@@ -182,7 +230,7 @@ class ScannerInline {
 
     // `[[id]]` ou `[[id,rótulo]]` âncora.
     if (c === '[' && s[pI + 1] === '[') {
-      const fecha = s.indexOf(']]', pI + 2);
+      const fecha = this.proxima(']]', pI + 2);
       if (fecha !== -1 && fecha < pFim && /^[^\s\]]+(,[^\]]*)?$/.test(s.slice(pI + 2, fecha))) {
         const miolo = s.slice(pI + 2, fecha);
         const virgula = miolo.indexOf(',');
@@ -193,13 +241,13 @@ class ScannerInline {
 
     // `[.papel]#texto#`, `[papel]#texto#`, `[#id]#texto#`.
     if (c === '[' && s[pI + 1] !== '[') {
-      const fecha = fechamentoDoColchete(s, pI);
+      const fecha = this.colchete(pI);
       if (fecha !== -1 && s[fecha + 1] === '#') {
         const atributos = lerAtributos(s.slice(pI + 1, fecha));
         const papeis = [...atributos.papeis, ...atributos.posicionais.filter((pP) => pP !== '')];
         const duplo = s[fecha + 2] === '#';
         const abreTexto = fecha + (duplo ? 3 : 2);
-        const fechaTexto = duplo ? s.indexOf('##', abreTexto) : this.fechamentoConstrained(abreTexto, pFim, '#');
+        const fechaTexto = duplo ? this.proxima('##', abreTexto) : this.fechamentoConstrained(abreTexto, pFim, '#');
         if (fechaTexto !== -1 && fechaTexto < pFim) {
           let marcas = pMarcas;
           for (const papel of papeis)
@@ -224,7 +272,7 @@ class ScannerInline {
     if (c === '+' && s[pI + 1] === '+') {
       const triplo = s[pI + 2] === '+';
       const marcador = triplo ? '+++' : '++';
-      const fecha = s.indexOf(marcador, pI + marcador.length);
+      const fecha = this.proxima(marcador, pI + marcador.length);
       if (fecha !== -1 && fecha < pFim)
         return { partes: [atomo('passagem', { texto: s.slice(pI + marcador.length, fecha), forma: marcador })], fim: fecha + marcador.length };
     }
@@ -239,7 +287,7 @@ class ScannerInline {
     // Pares unconstrained: `**`, `__`, ``` `` ```, `##`.
     if (c in MARCA_DO_DELIMITADOR && s[pI + 1] === c) {
       const marcador = c + c;
-      const fecha = s.indexOf(marcador, pI + 2);
+      const fecha = this.proxima(marcador, pI + 2);
       if (fecha !== -1 && fecha < pFim && fecha > pI + 2) {
         const marcas = comMarca(pMarcas, { tipo: MARCA_DO_DELIMITADOR[c] });
         return { partes: this.analisar(pI + 2, fecha, marcas), fim: fecha + 2 };
@@ -257,7 +305,7 @@ class ScannerInline {
 
     // Sobrescrito `^x^` e subscrito `~x~`: sem espaço por dentro.
     if ((c === '^' || c === '~') && !ehEspaco(s[pI + 1]) && s[pI + 1] !== c) {
-      const fecha = s.indexOf(c, pI + 1);
+      const fecha = this.proxima(c, pI + 1);
       if (fecha !== -1 && fecha < pFim && !/\s/.test(s.slice(pI + 1, fecha))) {
         const marcas = comMarca(pMarcas, { tipo: c === '^' ? 'sobrescrito' : 'subscrito' });
         return { partes: this.analisar(pI + 1, fecha, marcas), fim: fecha + 1 };
@@ -270,6 +318,12 @@ class ScannerInline {
   /** O índice do delimitador que fecha um par constrained aberto antes de `pDe`, ou -1. */
   private fechamentoConstrained(pDe: number, pFim: number, pDelimitador: string): number {
     const s = this.texto;
+    // Quem começa depois de uma varredura que chegou ao fim sem achar nada passa pelos mesmos caracteres: o
+    // delimitador de abertura nunca é `\`, então o escape não dessincroniza.
+    const chave = pFim * 256 + pDelimitador.charCodeAt(0);
+    const varrido = this.semFechamento.get(chave);
+    if (varrido !== undefined && pDe >= varrido)
+      return -1;
     for (let j = pDe; j < pFim; j++) {
       if (s[j] === '\\') {
         j += 1;
@@ -287,6 +341,7 @@ class ScannerInline {
       if (!ehPalavra(depois))
         return j;
     }
+    this.semFechamento.set(chave, pDe);
     return -1;
   }
 
@@ -318,6 +373,11 @@ class ScannerInline {
         return [atomo('menu', { alvo: pAlvo, texto: pAtributos })];
       case 'pass':
         return [atomo('passagem', { texto: pAtributos, forma: 'pass' })];
+      case 'stem':
+      case 'latexmath':
+      case 'asciimath':
+        // A fonte da fórmula vai como veio: `pAtributos` não é lista de atributos aqui (2026-10-31).
+        return [atomo('formula', { notacao: pNome, texto: pAtributos })];
       case 'anchor':
         return [atomo('ancora', primeiro.length > 0 ? { id: pAlvo, texto: primeiro } : { id: pAlvo })];
       default:

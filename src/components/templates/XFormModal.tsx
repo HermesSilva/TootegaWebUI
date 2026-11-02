@@ -21,8 +21,8 @@ import { XApplicationMode, XButtonColor, XUIEditorType } from '@core/types';
 import type { XFormView as XFormViewType, XRowAction } from '@core/types';
 import { XFormView } from './XFormView';
 import { ZIndexManager } from '@core/lib/zIndexManager';
-import { useMolduraDeModal, chaveDoQuadroDoFormulario, type QuadroDeModal } from '@core/hooks/useMolduraDeModal';
-import { usePreferenciaDoUsuario } from '@core/hooks/usePreferenciaDoUsuario';
+import { useMolduraDeModal } from '@core/hooks/useMolduraDeModal';
+import { useQuadroDoFormulario } from '@core/hooks/useQuadroDoFormulario';
 import { useDevice } from '@core/hooks/useDevice';
 import { useRecalculoAoDigitar } from '@core/hooks/useRecalculoAoDigitar';
 import { pisoDoFormularioPx, alturaDoCorpoPx, temCampoElastico, MODAL_MAX_PERCENT } from '@core/lib/formScale';
@@ -30,7 +30,7 @@ import { FormBusyProvider } from '@core/contexts/FormBusyContext';
 import { FormValuesProvider } from '@core/contexts/FormValuesContext';
 import { XFormBusyVeil } from './XFormBusyVeil';
 import { XHint } from '@core/components/ui/XHint';
-import { CLOSE_BUTTON_STYLE, aplicarTotaisAoVivo, aplicarValoresDirigidos, errosDoPrecoDoItem, getFieldValue, isVisible } from '@core/lib';
+import { CLOSE_BUTTON_STYLE, aplicarTotaisAoVivo, aplicarValoresDirigidos, errosDasRegrasDaGrade, errosDoPrecoDoItem, getFieldValue, isVisible } from '@core/lib';
 import { XBUTTON_PALETTE } from '@core/lib/xButtonPalette';
 
 // ============================================================================
@@ -104,8 +104,7 @@ export function XFormModal({
   // redimensionar pelas bordas. Posição e tamanho ficam no PERFIL do usuário, por formulário, e voltam na
   // próxima abertura. No celular o modal é cheio (FE-0): nada se arrasta nem se restaura.
   const { isMobile: ehCelular } = useDevice();
-  const [quadroSalvo, salvarQuadro] = usePreferenciaDoUsuario<QuadroDeModal | null>(
-    chaveDoQuadroDoFormulario(formView.name || 'formulario'), null);
+  const [quadroSalvo, salvarQuadro] = useQuadroDoFormulario(formView.name || 'formulario');
   const moldura = useMolduraDeModal({
     arrastavel: !ehCelular, redimensionavel: !ehCelular, aberto: isOpen,
     quadroSalvo: ehCelular ? null : quadroSalvo, aoMudarQuadro: salvarQuadro,
@@ -285,6 +284,9 @@ export function XFormModal({
     // O PREÇO DO ITEM fora da regra (igual ou maior que o unitário) não grava: o desconto sairia de um preço que a
     // regra recusa. A frase nomeia todos os itens de uma vez, no campo da grade.
     Object.assign(newErrors, errosDoPrecoDoItem(formView.sections.flatMap((pS) => pS.fields), formData));
+
+    // As células fora do formato que a própria linha pede (o tipo do contato decide o valor).
+    Object.assign(newErrors, errosDasRegrasDaGrade(formView.sections.flatMap((pS) => pS.fields), formData));
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;

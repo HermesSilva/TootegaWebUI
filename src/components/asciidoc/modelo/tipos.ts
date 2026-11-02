@@ -48,9 +48,21 @@ export type EspecieDeAtomo =
   | 'atributo'
   | 'quebraDeLinha'
   | 'passagem'
+  | 'formula'
   | 'bruto';
 
-/** Elemento inline indivisível: ocupa UMA posição e não tem texto editável por dentro. */
+/**
+ * Notação de uma fórmula (2026-10-31): `stem` segue o atributo `:stem:` do documento (AsciiMath quando vazio,
+ * LaTeX quando `latexmath`/`tex`/`latex`); `latexmath` e `asciimath` fixam. Guarda-se o que o autor escreveu.
+ */
+export type NotacaoDeFormula = 'stem' | 'latexmath' | 'asciimath';
+
+export const NOTACOES_DE_FORMULA: readonly NotacaoDeFormula[] = ['stem', 'latexmath', 'asciimath'];
+
+/**
+ * Elemento inline indivisível: ocupa UMA posição e não tem texto editável por dentro.
+ * `formula`: `dados.notacao` (NotacaoDeFormula) e `dados.texto` (a fonte, como veio entre os colchetes).
+ */
 export interface Atomo {
   tipo: 'atomo';
   especie: EspecieDeAtomo;
@@ -74,6 +86,11 @@ interface BlocoBase {
   papeis?: string[];
   /** Linhas de atributo que o modelo não interpreta, guardadas como vieram (`[%opts, cols=…]`). */
   atributosBrutos?: string[];
+  /**
+   * Linha do código-fonte (1-based) em que o bloco começa, carimbada pelo parser e ignorada pelo serializador. Bloco
+   * criado pelo editor não a tem. Serve a quem precisa ligar o visual ao texto (prévia com rolagem sincronizada).
+   */
+  linha?: number;
 }
 
 export interface Paragrafo extends BlocoBase {
@@ -230,10 +247,25 @@ export interface Passagem extends BlocoBase {
   texto: string;
 }
 
+/** `[stem]`/`[latexmath]`/`[asciimath]` sobre um bloco `++++` (ou parágrafo): a fonte da fórmula, como veio. */
+export interface Formula extends BlocoBase {
+  tipo: 'formula';
+  notacao: NotacaoDeFormula;
+  texto: string;
+}
+
 export interface AtributoDoDocumento extends BlocoBase {
   tipo: 'atributo';
   nome: string;
   valor: string;
+}
+
+/** `include::alvo[atributos]` — o editor não expande o arquivo; mostra a diretiva e deixa abri-lo (2026-10-31). */
+export interface Inclusao extends BlocoBase {
+  tipo: 'inclusao';
+  alvo: string;
+  /** O que veio entre colchetes (`leveloffset=+1`, `tag=…`), como veio. */
+  atributos?: string;
 }
 
 /** O que o parser não reconhece — guardado linha a linha, como veio, para nada se perder. */
@@ -259,7 +291,9 @@ export type Bloco =
   | Sumario
   | Comentario
   | Passagem
+  | Formula
   | AtributoDoDocumento
+  | Inclusao
   | Bruto;
 
 // ============================================================================

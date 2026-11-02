@@ -34,6 +34,7 @@ export type { SiteConfig, InitialPage } from './useSiteConfig';
 // Seletor de arquivos que também avisa quando o usuário CANCELA (o `<input type="file">` não avisa)
 export { useSeletorDeArquivo } from './useSeletorDeArquivo';
 export { useMolduraDeModal, chaveDoQuadroDoFormulario } from './useMolduraDeModal';
+export { useQuadroDoFormulario } from './useQuadroDoFormulario';
 export type { MolduraDeModal, OpcoesMolduraDeModal, QuadroDeModal } from './useMolduraDeModal';
 export type { SeletorDeArquivo, OpcoesSeletorDeArquivo } from './useSeletorDeArquivo';
 export { useAppX } from './useAppX';
