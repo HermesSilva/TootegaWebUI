@@ -16,6 +16,16 @@
  * na grade — a App só troca o `customEditorName`. Os tipos numéricos (`currency`, `number`,
  * `integer`) alinham à direita e são formatados pela mesma fonte única do resto do produto, para o
  * mesmo valor não aparecer de duas formas em duas telas.
+ *
+ * **RODAPÉ DE TOTAIS** (dono, 2026-11-08 — os custos da nota): o valor pode chegar como objeto
+ * `{ linhas, totais }` em vez da lista pura. `totais` é UMA linha, com os mesmos nomes de coluna, e
+ * vira o rodapé da tabela, em negrito. Quem soma é o BACK — o front não sabe se a coluna se soma
+ * simples ou multiplicada pela quantidade, e não tem de saber (CE-19). Coluna ausente no objeto de
+ * totais fica em branco no rodapé (não com travessão: ali o vazio é "não se soma", não "falta dado").
+ *
+ * **ELÁSTICA quando o modelo declara `fillsHeight`** (dono, 2026-11-08): a lista ocupa a altura que o
+ * formulário lhe der e ROLA SÓ O CORPO — o cabeçalho e o rodapé de totais ficam presos às bordas, e o
+ * resto do formulário não se move. Sem a declaração, segue medindo o próprio conteúdo, como sempre.
  */
 
 import type { JSX } from 'react';
@@ -23,26 +33,47 @@ import type { JSX } from 'react';
 import type { XEditorProps } from './XEditor';
 import type { XUIGridColumn } from '@core/types';
 import { XEditorLabel } from './XEditorLabel';
-import { formatCurrency, formatDate, formatDocument, formatNumber, getFieldValue } from '@core/lib';
+import { formatCurrency, formatDate, formatDecimal, formatDocument, formatNumber, getFieldValue } from '@core/lib';
 
 type Linha = Record<string, unknown>;
 
-/** Aceita a lista pronta ou o JSON que o back serializou — mesma tolerância da grade. */
-function linhasDe(pValor: unknown): Linha[] {
-  if (Array.isArray(pValor))
-    return pValor as Linha[];
+/** O valor do campo já entendido: as linhas e, quando o back as mandou, a linha de totais. */
+interface Conteudo {
+  linhas: Linha[];
+  totais?: Linha;
+}
 
-  if (typeof pValor === 'string' && pValor.trim()) {
+/**
+ * Aceita a lista pronta, o objeto `{ linhas, totais }` (rodapé) ou o JSON de qualquer um dos dois —
+ * mesma tolerância da grade. As chaves do objeto se leem sem caixa: o corpo chega em camelCase.
+ */
+function conteudoDe(pValor: unknown): Conteudo {
+  let valor = pValor;
+
+  if (typeof valor === 'string' && valor.trim()) {
     try {
-      const lista = JSON.parse(pValor);
-      if (Array.isArray(lista))
-        return lista as Linha[];
+      valor = JSON.parse(valor);
     } catch {
       /* não é JSON: vale como lista vazia */
+      return { linhas: [] };
     }
   }
 
-  return [];
+  if (Array.isArray(valor))
+    return { linhas: valor as Linha[] };
+
+  if (valor && typeof valor === 'object') {
+    const objeto = valor as Linha;
+    const linhas = getFieldValue(objeto, 'linhas');
+    const totais = getFieldValue(objeto, 'totais');
+
+    return {
+      linhas: Array.isArray(linhas) ? (linhas as Linha[]) : [],
+      totais: totais && typeof totais === 'object' && !Array.isArray(totais) ? (totais as Linha) : undefined,
+    };
+  }
+
+  return { linhas: [] };
 }
 
 /** Numérico alinha à DIREITA — é o que deixa a coluna de valores comparável linha a linha. */
@@ -67,7 +98,11 @@ function textoDaCelula(pLinha: Linha, pColuna: XUIGridColumn): string {
     case 'currency':
       return formatCurrency(Number(valor));
     case 'number':
-      return formatNumber(Number(valor));
+      // Casas declaradas na coluna (`decimalPlaces`) valem FIXAS: "20,00" e "20,01" alinham na coluna; sem
+      // declaração, o número sai com até duas casas, sem zeros à direita, como sempre.
+      return pColuna.decimalPlaces && pColuna.decimalPlaces > 0
+        ? formatDecimal(Number(valor), pColuna.decimalPlaces)
+        : formatNumber(Number(valor));
     case 'integer':
       return String(valor);
     case 'date':
@@ -97,11 +132,12 @@ function larguraNormalizada(pColunas: XUIGridColumn[]): (pColuna: XUIGridColumn)
 
 export function XReadOnlyListEditor({ editor, value }: XEditorProps): JSX.Element {
   const colunas = editor.editor.gridColumns ?? [];
-  const linhas = linhasDe(value);
+  const { linhas, totais } = conteudoDe(value);
   const largura = larguraNormalizada(colunas);
+  const elastica = editor.editor.fillsHeight === true;
 
   return (
-    <div className="w-full">
+    <div className={elastica ? 'w-full flex-1 min-h-0 flex flex-col' : 'w-full'}>
       <XEditorLabel title={editor.title} />
 
       {linhas.length === 0 ? (
@@ -111,7 +147,10 @@ export function XReadOnlyListEditor({ editor, value }: XEditorProps): JSX.Elemen
       ) : (
         // Sem `flex-1` e sem altura mínima: a lista mede o próprio conteúdo, e por isso várias cabem
         // uma abaixo da outra. `overflow-x-auto` só protege a tabela estreita demais para as colunas.
-        <div className="w-full overflow-x-auto rounded-lg border border-border">
+        <div
+          data-testid="lista-rolagem"
+          className={`w-full rounded-lg border border-border ${elastica ? 'flex-1 min-h-0 overflow-auto' : 'overflow-x-auto'}`}
+        >
           <table className="w-full border-collapse text-ui">
             <thead>
               <tr>
@@ -119,7 +158,8 @@ export function XReadOnlyListEditor({ editor, value }: XEditorProps): JSX.Elemen
                   <th
                     key={pColuna.fieldName}
                     className={`px-2 py-1.5 font-medium text-brand-text-secondary whitespace-nowrap
-                      bg-muted-bg border-b border-border ${ehNumerica(pColuna) ? 'text-right' : 'text-left'}`}
+                      bg-muted-bg border-b border-border ${ehNumerica(pColuna) ? 'text-right' : 'text-left'}
+                      ${elastica ? 'sticky top-0 z-[1]' : ''}`}
                     style={{ width: largura(pColuna) }}
                   >
                     {(pColuna.title ?? '')}
@@ -143,6 +183,27 @@ export function XReadOnlyListEditor({ editor, value }: XEditorProps): JSX.Elemen
                 </tr>
               ))}
             </tbody>
+
+            {totais && (
+              <tfoot>
+                <tr data-testid="lista-totais" className="border-t-2 border-border bg-muted-bg">
+                  {colunas.map((pColuna) => {
+                    const valor = getFieldValue(totais, pColuna.fieldName);
+                    const vazio = valor === null || valor === undefined || valor === '';
+                    return (
+                      <td
+                        key={pColuna.fieldName}
+                        className={`px-2 py-1.5 font-semibold text-brand-text-primary bg-muted-bg
+                          ${ehNumerica(pColuna) ? 'text-right tabular-nums whitespace-nowrap' : 'text-left'}
+                          ${elastica ? 'sticky bottom-0 z-[1] border-t-2 border-border' : ''}`}
+                      >
+                        {vazio ? '' : textoDaCelula(totais, pColuna)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       )}

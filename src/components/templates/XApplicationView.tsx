@@ -571,7 +571,14 @@ export function XApplicationView({
   // Ação de LINHA (modelo do back — CE-19): a que está COLETANDO dados, a que está aguardando
   // confirmação (com o que já se coletou), e a mensagem do desfecho.
   const [rowActionForm, setRowActionForm] = useState<
-    { action: XRowAction; rowID: string; rowData?: Record<string, unknown>; reloadFormAfter?: boolean } | null>(null);
+    {
+      action: XRowAction;
+      rowID: string;
+      rowData?: Record<string, unknown>;
+      reloadFormAfter?: boolean;
+      /** O que o `loadEndpoint` da ação devolveu para esta abertura (os custos já lançados na nota). */
+      iniciais?: Record<string, unknown>;
+    } | null>(null);
   const [pendingRowAction, setPendingRowAction] = useState<
     { action: XRowAction; rowID: string; corpo: Record<string, unknown> } | null>(null);
   const [rowActionResult, setRowActionResult] = useState<string | null>(null);
@@ -1240,6 +1247,22 @@ export function XApplicationView({
     }
 
     if ((pAction.fields?.length ?? 0) > 0) {
+      // VALORES INICIAIS do back (loadEndpoint), também na grade PRINCIPAL (dono, 2026-11-08: os custos da
+      // nota abrem com o já lançado e com os itens). Antes só a grade de detalhe o honrava. `{id}` e
+      // `{rowId}` são a mesma linha aqui. A recusa já sai pelo diálogo global da api: o modal não abre.
+      if (pAction.loadEndpoint) {
+        const endpoint = pAction.loadEndpoint.replace('{id}', pRowID).replace('{rowId}', pRowID);
+        void (async () => {
+          try {
+            const iniciais = await api.get<Record<string, unknown>>(endpoint) ?? {};
+            setRowActionForm({ action: pAction, rowID: pRowID, iniciais });
+          } catch {
+            /* mostrado pelo diálogo global */
+          }
+        })();
+        return;
+      }
+
       setRowActionForm({ action: pAction, rowID: pRowID });
       return;
     }
@@ -1908,6 +1931,7 @@ export function XApplicationView({
           action={rowActionForm.action}
           rowID={rowActionForm.rowID}
           rowData={rowActionForm.rowData ?? selectedRowData ?? undefined}
+          initialValues={rowActionForm.iniciais}
           onSubmit={handleRowActionFormSubmit}
           onCancel={() => setRowActionForm(null)}
         />

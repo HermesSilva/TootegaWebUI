@@ -77,6 +77,12 @@ export interface XModalShellProps {
    * grade, um documento de apoio) sem fechá-lo. Falso ⇒ fixo e centrado, como sempre.
    */
   draggable?: boolean;
+  /**
+   * O corpo ROLA (o padrão). Falso ⇒ o corpo não rola e passa a ser uma coluna flexível de altura limitada,
+   * para que um filho que absorve a sobra (a grade dos itens nos custos da nota, dono 2026-11-08) role sozinho,
+   * com o restante do formulário parado.
+   */
+  rolarConteudo?: boolean;
   children: ReactNode;
 }
 
@@ -103,6 +109,7 @@ export function XModalShell({
   variant = 'inline',
   contentClassName = '',
   draggable = false,
+  rolarConteudo = true,
   children,
   ...rest
 }: XModalShellProps): JSX.Element {
@@ -171,7 +178,10 @@ export function XModalShell({
           </div>
         )}
 
-        <div className={`flex-1 min-h-0 overflow-y-auto ${contentClassName}`} data-corpo-do-modal>
+        <div
+          className={`flex-1 min-h-0 ${rolarConteudo ? 'overflow-y-auto' : 'overflow-hidden flex flex-col'} ${contentClassName}`}
+          data-corpo-do-modal
+        >
           {children}
         </div>
 

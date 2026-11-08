@@ -242,6 +242,14 @@ export function XRowActionFormModal({
   // Demonstrativo pede largura para rótulo, detalhe e valor caberem numa linha sem quebrar — o piso
   // grande (42rem) basta, e o dono o quis 25% mais estreito que o extragrande (2026-10-25).
   const temDemonstrativo = campos.some((pCampo) => pCampo.editor?.editorType === XUIEditorType.Statement);
+  // Lista de linhas (a grade dos itens nos custos da nota, dono 2026-11-08) pede a largura das colunas: o
+  // piso sobe para o extragrande, e o cartão continua crescendo com o conteúdo até o teto de 90% da área.
+  const temLista = campos.some((pCampo) => pCampo.editor?.customEditorName === 'XReadOnlyListEditor');
+  // Campo que ABSORVE A SOBRA vertical (`fillsHeight`, declarado no back): o formulário não rola, só ele (dono,
+  // 2026-11-08 — a grade dos itens nos custos da nota rola sem levar junto os valores, o cabeçalho e o rodapé).
+  // Ele sai da grade de 32 colunas e vai abaixo dela, ocupando a altura que sobrar.
+  const elastico = campos.find((pCampo) => pCampo.editor?.fillsHeight === true);
+  const camposDaGrade = elastico ? campos.filter((pCampo) => pCampo !== elastico) : campos;
 
   const titulo = action.formTitle || (action.title ?? '');
   const aviso = action.warningMessage ? (action.warningMessage ?? '') : '';
@@ -261,6 +269,65 @@ export function XRowActionFormModal({
       setAreaDoApp((ancora.current?.closest('[data-app-tab]') ?? ancora.current?.closest('[data-app-area]') ?? null) as HTMLElement | null);
   }, [action.useAppArea]);
 
+  // Um campo do modal: na grade de 32 colunas (o padrão) ou, o elástico, ocupando a altura que sobra.
+  const renderizarCampo = (pCampo: XDataEditor, pElastico: boolean): JSX.Element => {
+    const nome = pCampo.fieldName;
+    // O erro LOCAL (regra declarada no editor) vale depois de tocado; o do SERVIDOR vale até o
+    // usuário mexer naquele campo — é a marca que diz onde a recusa aconteceu.
+    const erro = (tocados[nome] ? erros[nome] : undefined)
+      ?? (corrigidosDesdeServidor[nome] ? undefined : erroDoServidor(nome));
+
+    // Sem rótulo aqui: o editor já desenha o dele (XEditorLabel), com o asterisco do obrigatório.
+    // displayValue = o texto de um lookup preenchido por LIGAÇÃO (a conta que veio do boleto):
+    // sem ele, o combo mostraria a chave crua em vez do nome da conta.
+    const textoExibicao = pCampo.editor?.displayValueField
+      ? valores[pCampo.editor.displayValueField]
+      : undefined;
+    // Invólucro só para o testid, com a MESMA chave do formulário (`field-<binding>`): assim o
+    // teste e2e alcança um campo do mesmo jeito, sem saber se está num formulário ou numa ação
+    // de linha. Div comum, e NÃO `display:contents`: o pai espaça os filhos com `space-y-3`, que
+    // é margem entre IRMÃOS — sob `contents` o filho deixa de ser irmão e o espaçamento sumiria.
+    // DOCUMENTO DE APOIO declarado no campo (o DANFE da nota ao escrever a carta de correção): botão à
+    // direita, na altura do rótulo. Abre a janela flutuante; não mexe no valor do campo.
+    const documento = pCampo.editor?.documentEndpoint
+      ? {
+          endpoint: resolverEndpoint(pCampo.editor.documentEndpoint),
+          botao: pCampo.editor.documentButtonTitle || 'Ver documento',
+          titulo: pCampo.editor.documentWindowTitle || pCampo.editor.documentButtonTitle || 'Documento',
+        }
+      : null;
+
+    return (
+      <div
+        key={pCampo.id ?? nome}
+        data-testid={`field-${nome}`}
+        className={`${documento ? 'relative' : ''} ${pElastico ? 'flex-1 min-h-0 flex flex-col' : ''}`.trim() || undefined}
+        style={pElastico ? undefined : { gridColumn: `span ${pCampo.colSpan > 1 ? Math.min(pCampo.colSpan, 32) : 32}` }}
+      >
+        {documento && (
+          <button
+            type="button"
+            onClick={() => setJanela({ endpoint: documento.endpoint, titulo: documento.titulo })}
+            className={`absolute right-0 -top-0.5 z-10 inline-flex items-center gap-1.5 px-2.5 py-1 text-ui-xs
+                        font-medium rounded-md transition-colors ${XBUTTON_PALETTE[XButtonColor.Document]}`}
+            data-testid={`documento-${nome}`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            {documento.botao}
+          </button>
+        )}
+        <XEditor
+          editor={pCampo}
+          value={valores[nome]}
+          displayValue={textoExibicao}
+          onChange={(pValor, pBindings) => alterar(pCampo, pValor, pBindings)}
+          error={erro}
+          disabled={isBusy}
+        />
+      </div>
+    );
+  };
+
   const dialogo = (
     <>
     <XModalShell
@@ -269,7 +336,8 @@ export function XRowActionFormModal({
       // Texto longo (área de texto) pede leitura confortável: o piso sobe para o tamanho grande. Ações
       // de campos curtos (motivo, valor, data) seguem no pequeno — um modal largo para dois campos
       // estreitos só espalha o olhar.
-      size={temDemonstrativo || temTextoLongo ? 'lg' : 'sm'}
+      size={temLista ? 'xl' : temDemonstrativo || temTextoLongo ? 'lg' : 'sm'}
+      rolarConteudo={!elastico}
       title={titulo}
       closeLabel={'Fechar'}
       onClose={onCancel}
@@ -309,78 +377,28 @@ export function XRowActionFormModal({
         </>
       }
     >
-      <div className="px-4 sm:px-5 py-4 space-y-3">
+      <div className={`px-4 sm:px-5 py-4 space-y-3 ${elastico ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
         {/* Os campos numa grade de 32 colunas, como o painel de edição da grade: o campo que declara
             colSpan divide a linha com os vizinhos; o que não declara (colSpan 1, o padrão) ocupa a
             linha inteira, como sempre ocupou aqui. */}
         {/* O aviso que o usuário não pode deixar de ler — o back diz se existe, e qual é. Discreto no
             tamanho, firme na cor: é uma faixa, não um bloco de texto. */}
         {aviso && (
-          <div className="flex items-start gap-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5">
+          <div className="flex items-start gap-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5 shrink-0">
             <AlertTriangle className="w-4 h-4 text-danger shrink-0 mt-0.5" />
             <p className="text-ui-sm text-brand-text-primary leading-snug">{aviso}</p>
           </div>
         )}
 
-        <div className="grid gap-x-3 gap-y-3" style={{ gridTemplateColumns: 'repeat(32, minmax(0, 1fr))' }}>
-        {campos.map((pCampo) => {
-          const nome = pCampo.fieldName;
-          // O erro LOCAL (regra declarada no editor) vale depois de tocado; o do SERVIDOR vale até o
-          // usuário mexer naquele campo — é a marca que diz onde a recusa aconteceu.
-          const erro = (tocados[nome] ? erros[nome] : undefined)
-            ?? (corrigidosDesdeServidor[nome] ? undefined : erroDoServidor(nome));
-
-          // Sem rótulo aqui: o editor já desenha o dele (XEditorLabel), com o asterisco do obrigatório.
-          // displayValue = o texto de um lookup preenchido por LIGAÇÃO (a conta que veio do boleto):
-          // sem ele, o combo mostraria a chave crua em vez do nome da conta.
-          const textoExibicao = pCampo.editor?.displayValueField
-            ? valores[pCampo.editor.displayValueField]
-            : undefined;
-          // Invólucro só para o testid, com a MESMA chave do formulário (`field-<binding>`): assim o
-          // teste e2e alcança um campo do mesmo jeito, sem saber se está num formulário ou numa ação
-          // de linha. Div comum, e NÃO `display:contents`: o pai espaça os filhos com `space-y-3`, que
-          // é margem entre IRMÃOS — sob `contents` o filho deixa de ser irmão e o espaçamento sumiria.
-          // DOCUMENTO DE APOIO declarado no campo (o DANFE da nota ao escrever a carta de correção): botão à
-          // direita, na altura do rótulo. Abre a janela flutuante; não mexe no valor do campo.
-          const documento = pCampo.editor?.documentEndpoint
-            ? {
-                endpoint: resolverEndpoint(pCampo.editor.documentEndpoint),
-                botao: pCampo.editor.documentButtonTitle || 'Ver documento',
-                titulo: pCampo.editor.documentWindowTitle || pCampo.editor.documentButtonTitle || 'Documento',
-              }
-            : null;
-
-          return (
-            <div
-              key={pCampo.id ?? nome}
-              data-testid={`field-${nome}`}
-              className={documento ? 'relative' : undefined}
-              style={{ gridColumn: `span ${pCampo.colSpan > 1 ? Math.min(pCampo.colSpan, 32) : 32}` }}
-            >
-              {documento && (
-                <button
-                  type="button"
-                  onClick={() => setJanela({ endpoint: documento.endpoint, titulo: documento.titulo })}
-                  className={`absolute right-0 -top-0.5 z-10 inline-flex items-center gap-1.5 px-2.5 py-1 text-ui-xs
-                              font-medium rounded-md transition-colors ${XBUTTON_PALETTE[XButtonColor.Document]}`}
-                  data-testid={`documento-${nome}`}
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  {documento.botao}
-                </button>
-              )}
-              <XEditor
-                editor={pCampo}
-                value={valores[nome]}
-                displayValue={textoExibicao}
-                onChange={(pValor, pBindings) => alterar(pCampo, pValor, pBindings)}
-                error={erro}
-                disabled={isBusy}
-              />
-            </div>
-          );
-        })}
+        <div className="grid gap-x-3 gap-y-3 shrink-0" style={{ gridTemplateColumns: 'repeat(32, minmax(0, 1fr))' }}>
+        {camposDaGrade.map((pCampo) => renderizarCampo(pCampo, false))}
         </div>
+
+        {elastico && (
+          <div className="flex-1 min-h-0 flex flex-col">
+            {renderizarCampo(elastico, true)}
+          </div>
+        )}
       </div>
     </XModalShell>
 
