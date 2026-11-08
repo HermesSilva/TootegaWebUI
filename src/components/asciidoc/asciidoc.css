@@ -542,6 +542,51 @@
   background: hsl(var(--muted-bg));
 }
 
+.adc-atomo-formula {
+  background: transparent;
+  border-color: transparent;
+  padding: 0 0.15em;
+  font-size: 1em;
+}
+
+.adc-atomo-formula:hover {
+  border-color: hsl(var(--border-color));
+}
+
+.adc-formula-caixa {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.adc-formula-bloco {
+  display: block;
+  text-align: center;
+}
+
+.adc-formula-com-avisos {
+  outline: 1px dashed hsl(var(--warning-text, 35 90% 40%));
+  outline-offset: 2px;
+}
+
+.adc-formula-previa {
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  border-bottom: 1px solid hsl(var(--border-color));
+}
+
+.adc-formula-vazia {
+  color: hsl(var(--text-muted));
+  font-size: 0.8125rem;
+}
+
+.adc-dialogo-previa {
+  padding: 0.5rem 0.75rem;
+  border: 1px dashed hsl(var(--border-color));
+  border-radius: 0.375rem;
+  overflow-x: auto;
+  text-align: center;
+}
+
 .adc-atomo-icone {
   flex: 0 0 auto;
 }
@@ -1179,4 +1224,138 @@
 [data-theme='dark'] .adc-link,
 [data-theme='amber'] .adc-link {
   color: hsl(var(--brand-primary-light));
+}
+
+/* ------------------------------------------------------------- inclusão e imagem ausente (2026-10-31) */
+
+.adc-ilha-acao {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: hsl(var(--text-secondary));
+  cursor: pointer;
+}
+
+.adc-ilha-acao:hover,
+.adc-ilha-acao:focus-visible {
+  background: hsl(var(--hover));
+  border-color: hsl(var(--border-color));
+  color: hsl(var(--text-primary));
+  outline: none;
+}
+
+.adc-ilha-prefixo {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: hsl(var(--text-muted));
+  white-space: nowrap;
+}
+
+.adc-imagem-ausente {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px dashed hsl(var(--border-color));
+  border-radius: 0.375rem;
+  background: hsl(var(--muted-bg));
+  color: hsl(var(--text-secondary));
+  font-size: 0.875rem;
+}
+/* ------------------------------------------------------------------ barra compacta (dono, 2026-10-31) */
+/* Os botões da barra são ferramentas de edição em sequência, não alvos de toque isolados: 28 px (acima do mínimo de
+   24 px da WCAG 2.2 AA para alvo) e colados, com a barra mais baixa. Vale só dentro da barra do editor. */
+
+.adc-barra {
+  gap: 0;
+  padding: 0.125rem 0.25rem;
+  row-gap: 0.125rem;
+}
+
+.adc-barra-grupo {
+  gap: 0;
+  padding: 0 0.125rem;
+}
+
+.adc-barra .adc-barra-botao {
+  min-height: 1.75rem;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  width: 1.75rem;
+  padding: 0;
+  border-radius: 0.375rem;
+}
+
+.adc-barra .adc-barra-botao svg {
+  width: 15px;
+  height: 15px;
+}
+
+.adc-barra-seletor {
+  min-height: 1.75rem;
+  height: 1.75rem;
+  padding: 0 0.375rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+}
+
+.adc-barra-gatilho {
+  gap: 0.1875rem;
+}
+/* ------------------------------------------------------------------ cursor virtual (modo dividido, 2026-10-31) */
+/* O traço marca onde o cursor do código cai no documento; o bloco ganha uma barra à esquerda. Nada disto é a
+   seleção real: o foco segue no código. Cor com contraste de não-texto ≥ 3:1 sobre a superfície (WCAG 2.2 AA). */
+
+.adc-documento {
+  position: relative;
+}
+
+.adc-cursor-virtual {
+  position: absolute;
+  width: 2px;
+  margin-left: -1px;
+  background: hsl(var(--brand-primary));
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 2;
+  animation: adc-piscar 1s steps(1, end) infinite;
+}
+
+@keyframes adc-piscar {
+  50% { opacity: 0; }
+}
+
+.adc-bloco-cursor-virtual {
+  box-shadow: -3px 0 0 0 hsl(var(--brand-primary) / 0.55);
+  border-radius: 2px;
+}
+
+/* O mesmo cursor virtual no lado do código, quando o visual é o lado ativo. */
+.adc-codigo-cursor-virtual {
+  position: absolute;
+  width: 2px;
+  margin-left: -1px;
+  background: hsl(var(--brand-primary));
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 2;
+  animation: adc-piscar 1s steps(1, end) infinite;
+}
+
+.adc-codigo-linha-virtual {
+  position: absolute;
+  left: 0;
+  right: 0;
+  box-shadow: inset 3px 0 0 0 hsl(var(--brand-primary) / 0.55);
+  background: hsl(var(--brand-primary) / 0.06);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .adc-cursor-virtual, .adc-codigo-cursor-virtual { animation: none; }
 }
