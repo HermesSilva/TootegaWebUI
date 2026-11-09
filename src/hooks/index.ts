@@ -14,6 +14,7 @@ export { useVersionCheck } from './useVersionCheck';
 export { usePWA } from './usePWA';
 export { usePreferenciaDoUsuario } from './usePreferenciaDoUsuario';
 export { usePaineisAoEntrar, chaveDosPaineisAoEntrar } from './usePaineisAoEntrar';
+export { useAbrirAppPeloEndereco, lerAppPedidaNoEndereco, enderecoSemOPedido, PARAMETRO_ABRIR_APP } from './useAbrirAppPeloEndereco';
 
 // Application Hooks - Template-Driven UI
 export {
