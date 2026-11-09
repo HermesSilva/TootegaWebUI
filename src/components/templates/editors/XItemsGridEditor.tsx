@@ -33,6 +33,7 @@ import {
   precoDoItemValido,
 } from '@core/lib/precoDoItem';
 import { erroDaCelula, regraDaCelula } from '@core/lib/regrasDaCelula';
+import { celulaEditavelNaLinha, celulaObrigatoriaVazia } from '@core/lib/celulasObrigatorias';
 import { XBUTTON_PALETTE } from '@core/lib/xButtonPalette';
 import { XButtonColor } from '@core/types';
 
@@ -306,6 +307,11 @@ function XCidadePickerCell({
   pOnPreencher: (pPatch: Record<string, unknown>) => void;
 }): JSX.Element {
   const [aberto, setAberto] = useState(false);
+  // A CÉLULA é a âncora do picker (dono, 2026-11-09): sem ela o picker virava um diálogo contido no ancestral
+  // posicionado mais próximo — o `div relative` desta célula —, nascia do tamanho dela e era recortado pela rolagem
+  // da grade (só o título aparecia). Com âncora, ele é o POPOVER de campo: abre abaixo da célula, por portal, com a
+  // regra única de posição (abaixo, acima, à direita, à esquerda).
+  const celulaRef = useRef<HTMLDivElement>(null);
 
   const aoSelecionar = (pItem: Record<string, unknown>): void => {
     const patch: Record<string, unknown> = {};
@@ -336,7 +342,7 @@ function XCidadePickerCell({
   const tituloDaBusca = pColuna.editorType === 'citypicker' ? 'Procurar cidade' : (pColuna.pickerTitle || 'Procurar');
 
   return (
-    <div className="relative">
+    <div ref={celulaRef} className="relative">
       <input type="text" value={String(pValor ?? '')} readOnly disabled={pTravada} className={`${pClasse} ${temValor && !pTravada ? 'pr-12' : 'pr-7'}`} />
       {!pTravada && temValor && (
         <button
@@ -365,6 +371,10 @@ function XCidadePickerCell({
           endpoint={pColuna.pickerEndpoint ?? ''}
           title={pColuna.pickerTitle || 'Selecionar'}
           columns={pColuna.pickerColumns}
+          ancora={celulaRef}
+          // A direita do popover na direita da célula (dono, 2026-11-09): mais largo que a célula, ele cresce para
+          // dentro da grade em vez de passar da borda do modal.
+          alinhamento="direita"
           onSelect={aoSelecionar}
           onClose={() => setAberto(false)}
         />
@@ -403,6 +413,9 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
   rowsRef.current = rows;
 
   const travada = Boolean(disabled) || editor.editor.isReadOnly;
+  // LINHAS FIXAS (fixedRows): as linhas são as do servidor — some o "Novo" e o "Remover", e as células continuam
+  // editáveis. A grade travada também não inclui nem remove.
+  const semLinhasNovas = travada || Boolean(editor.editor.fixedRows);
 
   // Quantas fileiras cada item ocupa. Uma ⇒ tabela comum; mais de uma ⇒ o item vira um bloco com os
   // campos distribuídos, cada um com o seu rótulo (nenhum cabeçalho descreveria duas fileiras).
@@ -638,7 +651,13 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
 
     // Trava a célula quando a grade inteira está travada OU quando ESTA coluna é só-leitura (o número,
     // o produto e o preço unitário não se digitam — vêm de fora ou do cálculo).
-    const celTravada = travada || colunaSoLeitura(pColuna);
+    // A LINHA também pode travar a célula (editableWhenRowField): na importação da nota, só o item sem GTIN válido
+    // escolhe o produto.
+    const numeroSoLeitura = colunaSoLeitura(pColuna) || !celulaEditavelNaLinha(pColuna, pLinha);
+    const celTravada = travada || numeroSoLeitura;
+    // Obrigatória e vazia NESTA linha (isRequired): a moldura fica vermelha até preencher — a mesma regra com que o
+    // modal de coleta segura o Confirmar.
+    const pendente = !travada && celulaObrigatoriaVazia(pColuna, pLinha);
 
     // Número de ordem do item: a POSIÇÃO da linha (1, 2, 3…), não um valor gravado — sempre começa em 1.
     // O servidor numera igual ao gravar; a tela mostra o mesmo ao vivo (dono, 2026-07-15).
@@ -716,7 +735,7 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
           pColuna={pColuna}
           pValor={valor}
           pTravada={celTravada}
-          pClasse={cellClassOf(celTravada)}
+          pClasse={pendente ? cellClassOf(celTravada).replace('border-border', 'border-danger') : cellClassOf(celTravada)}
           pOnPreencher={(patch) => atualizarVarios(pIndice, patch)}
         />
       );
@@ -762,7 +781,7 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
           value={precoDoItemExibido(pLinha, pricing)}
           decimalPlaces={pColuna.decimalPlaces || undefined}
           disabled={travada}
-          readOnly={colunaSoLeitura(pColuna)}
+          readOnly={numeroSoLeitura}
           invalido={precoDoItemValido(pLinha, pricing) ? undefined : mensagemDoPrecoDoItem(pLinha, pricing)}
           onChange={(n) => atualizar(pIndice, pColuna.fieldName, n)}
         />
@@ -777,7 +796,7 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
           // são duas casas que o operador confere à toa.
           decimalPlaces={pColuna.decimalPlaces || undefined}
           disabled={travada}
-          readOnly={colunaSoLeitura(pColuna)}
+          readOnly={numeroSoLeitura}
           onChange={(n) => atualizar(pIndice, pColuna.fieldName, n ?? 0)}
         />
       );
@@ -792,7 +811,7 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
           value={valor}
           decimalPlaces={0}
           disabled={travada}
-          readOnly={colunaSoLeitura(pColuna)}
+          readOnly={numeroSoLeitura}
           onChange={(n) => atualizar(pIndice, pColuna.fieldName, n ?? 0)}
         />
       );
@@ -824,7 +843,7 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
    *
    * Grade TRAVADA (só-leitura) não o mostra — sem coluna de remover, não há onde criar.
    */
-  const botaoNovo = !travada && (
+  const botaoNovo = !semLinhasNovas && (
     <button
       type="button"
       onClick={adicionar}
@@ -967,7 +986,7 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
                 })}
               </div>
 
-              {!travada && <div className="pt-5">{botaoRemover(indice)}</div>}
+              {!semLinhasNovas && <div className="pt-5">{botaoRemover(indice)}</div>}
             </div>
           ))}
         </div>
@@ -1024,7 +1043,7 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
               {/* A coluna do "Remover" hospeda o botão de criar no CABEÇALHO (dono, 2026-09-17).
                   Largura AUTOMÁTICA (e não os 10 de antes): a célula tem de caber o botão, e um
                   `w-10` o espremeria contra a borda. `text-right` o encosta na direita da grade. */}
-              {!travada && (
+              {!semLinhasNovas && (
                 <th className={`px-2 py-1 text-right bg-muted-bg border-b border-border ${COLUNA_FIXA_CABECALHO}`}>
                   <div className="flex justify-end">{botaoNovo}</div>
                 </th>
@@ -1035,7 +1054,7 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={colunas.length + (travada ? 0 : 1) + (temAcoes ? 1 : 0)}
+                  colSpan={colunas.length + (semLinhasNovas ? 0 : 1) + (temAcoes ? 1 : 0)}
                   className="px-2 py-3 text-center text-brand-text-secondary"
                 >
                   {'Nenhum item encontrado'}
@@ -1055,7 +1074,7 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
                 {temAcoes && (
                   <td className={`px-1.5 py-1 whitespace-nowrap ${COLUNA_FIXA_CORPO}`}>{botoesAcao(row)}</td>
                 )}
-                {!travada && (
+                {!semLinhasNovas && (
                   <td className={`px-1.5 py-1 text-center ${COLUNA_FIXA_CORPO}`}>{botaoRemover(indice)}</td>
                 )}
               </tr>

@@ -588,6 +588,11 @@ export interface XUIEditorModel extends XModel {
    * — os `fieldBindings` copiam value/text/group para as colunas. Vazio ⇒ "Novo" adiciona linha vazia.
    */
   itemPickerEndpoint?: string;
+  /**
+   * Grade de LINHAS FIXAS: as linhas são as do servidor, sem "Novo" nem "Remover"; as células editáveis continuam
+   * se editando (os itens de uma nota a importar são os da nota, nem um a mais, nem um a menos).
+   */
+  fixedRows?: boolean;
 
   /**
    * PICKER DE REGISTRO do campo: declarado, o editor ganha uma lupa que abre um diálogo de busca
@@ -715,6 +720,13 @@ export interface XUIGridColumn {
   visibleWhenField?: string;
   /** Campo do FORMULÁRIO que torna a coluna só-leitura quando verdadeiro. Soma-se a `readOnly`. */
   readOnlyWhenField?: string;
+  /**
+   * Campo da própria LINHA que torna a célula EDITÁVEL: verdadeiro ⇒ edita; falso ou ausente ⇒ só-leitura naquela
+   * linha. Vazio ⇒ não depende da linha. Soma-se às demais travas.
+   */
+  editableWhenRowField?: string;
+  /** A célula EDITÁVEL tem de estar preenchida: o modal de coleta marca a linha vazia e não confirma. */
+  isRequired?: boolean;
   /**
    * Casas decimais da célula numérica (`currency`/`number`). Ausente ou 0 ⇒ o padrão da moeda, DUAS.
    * Existe porque nem toda quantidade é moeda: peça inteira se lê `25`, não `25,00`.
@@ -1131,6 +1143,8 @@ export interface XRowAction extends XModel {
   recalcDelay?: number;
   /** Rótulo do botão que desiste do modal de coleta. Vazio ⇒ "Fechar". */
   cancelTitle?: string;
+  /** Rótulo do botão que confirma o modal de coleta. Vazio ⇒ "Confirmar". */
+  confirmTitle?: string;
   /**
    * O modal se contém na ÁREA DO APP (`[data-app-area]`), por cima do formulário que o abriu, e não
    * dentro dele. Falso ⇒ fica no quadro de quem chamou (a regra geral de contenção).
@@ -1176,6 +1190,14 @@ export interface XApplication extends XModel {
   exportConfig: XExportConfig;
   /** Recebe UM arquivo por requisição (multipart, campo `arquivo`). Vazio ⇒ a App não importa. */
   importEndpoint: string;
+  /** A importação recebe UM arquivo por vez: o seletor não deixa escolher vários. */
+  importSingleFile?: boolean;
+  /**
+   * Formulário que resolve o que a importação não decide sozinha: a resposta traz `resolucaoPendente`, o motor abre
+   * este modal de coleta com aqueles valores e, ao confirmar, reenvia o mesmo arquivo com o campo multipart
+   * `resolucao` (JSON do que se preencheu). Nulo ⇒ a importação não pergunta nada.
+   */
+  importResolution?: XRowAction | null;
   currentMode: XApplicationMode;
   icon: string;
   apiBaseURL: string;

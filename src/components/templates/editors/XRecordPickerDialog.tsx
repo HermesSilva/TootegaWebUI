@@ -82,6 +82,11 @@ interface XRecordPickerDialogProps {
    * que é o caso de quem abre por botão (a grade de itens).
    */
   ancora?: React.RefObject<HTMLElement | null>;
+  /**
+   * Com âncora, qual borda do popover coincide com a do campo: `esquerda` (o padrão) ou `direita` — a lupa na última
+   * coluna de uma grade abre com a direita alinhada à direita da célula, crescendo para dentro da grade.
+   */
+  alinhamento?: 'esquerda' | 'direita';
 }
 
 /** Espera antes de consultar: o usuário digita, não dispara uma busca por tecla. */
@@ -200,7 +205,7 @@ function XCriterioCombinado({ criterio, valor, filtros, onChange }: XCriterioCom
 }
 
 export function XRecordPickerDialog({
-  endpoint, title, searchFields, searchPlaceholder, columns, onSelect, onSelectMany, onClose, ancora,
+  endpoint, title, searchFields, searchPlaceholder, columns, onSelect, onSelectMany, onClose, ancora, alinhamento,
   multiSelect = false, fixedFilters,
 }: XRecordPickerDialogProps): JSX.Element {
 
@@ -319,6 +324,7 @@ export function XRecordPickerDialog({
     (pCampo: DOMRect): number => Math.min(Math.max(pCampo.width, LARGURA_POPOVER), window.innerWidth - 16), []);
   const { posicao } = usePosicaoFlutuante(ehPopover, campoRef, painelRef, {
     largura: larguraDoPainel,
+    alinhamento,
     desligado: arrastado !== null,
   });
 

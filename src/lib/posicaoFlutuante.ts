@@ -36,10 +36,17 @@ export interface OpcoesPosicaoFlutuante {
   margem?: number;
   /** Piso de altura quando nenhum lado comporta o painel inteiro. */
   alturaMinima?: number;
+  /**
+   * Abaixo ou acima do campo, qual BORDA do painel coincide com a do campo: `esquerda` (o padrão) ou `direita`. A
+   * direita serve ao campo que fica no lado direito do quadro — a lupa de produto na última coluna de uma grade
+   * (dono, 2026-11-09): o painel, mais largo que o campo, cresce para a esquerda, por cima da grade, em vez de passar
+   * da borda. Em qualquer caso o painel não vaza da janela.
+   */
+  alinhamento?: 'esquerda' | 'direita';
 }
 
 export function posicaoFlutuante(pCampo: DOMRect, pOpcoes: OpcoesPosicaoFlutuante): PosicaoFlutuante {
-  const { largura, altura, folga = 4, margem = 8, alturaMinima = 120 } = pOpcoes;
+  const { largura, altura, folga = 4, margem = 8, alturaMinima = 120, alinhamento = 'esquerda' } = pOpcoes;
   const larguraJanela = window.innerWidth;
   const alturaJanela = window.innerHeight;
 
@@ -49,8 +56,9 @@ export function posicaoFlutuante(pCampo: DOMRect, pOpcoes: OpcoesPosicaoFlutuant
   const espacoEsquerda = pCampo.left - folga - margem;
   const alturaUtil = alturaJanela - 2 * margem;
 
-  // Na vertical, alinha à esquerda do campo sem vazar pela direita da janela.
-  const leftVertical = Math.max(margem, Math.min(pCampo.left, larguraJanela - largura - margem));
+  // Na vertical, alinha à borda pedida do campo (esquerda, ou direita com direita) sem vazar da janela.
+  const leftDesejado = alinhamento === 'direita' ? pCampo.right - largura : pCampo.left;
+  const leftVertical = Math.max(margem, Math.min(leftDesejado, larguraJanela - largura - margem));
   // Ao lado, alinha ao topo do campo sem vazar pelo pé da janela.
   const topLateral = Math.max(margem, Math.min(pCampo.top, alturaJanela - altura - margem));
 

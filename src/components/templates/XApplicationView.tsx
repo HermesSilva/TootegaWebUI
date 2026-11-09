@@ -1312,7 +1312,9 @@ export function XApplicationView({
   // Certificados (2026-07-25). Aqui cancelar e inofensivo — nada foi armado antes de abrir —, e
   // por isso nao ha `onCancelar`.
   const seletorImportacao = useSeletorDeArquivo({
-    onEscolher: (pArquivos) => setImportFiles(pArquivos),
+    // Arquivo ÚNICO declarado pela App (importSingleFile): o seletor já não deixa escolher vários, e o corte aqui é a
+    // garantia para o que chegar por outro caminho.
+    onEscolher: (pArquivos) => setImportFiles(application.importSingleFile ? pArquivos.slice(0, 1) : pArquivos),
   });
 
   const handleButtonAction = useCallback((pAction: XButtonAction, pButton: XButton) => {
@@ -1793,7 +1795,7 @@ export function XApplicationView({
           <input
             ref={seletorImportacao.ref}
             type="file"
-            multiple
+            multiple={!application.importSingleFile}
             className="hidden"
             onChange={seletorImportacao.aoMudar}
             data-testid="import-file-input"
@@ -1802,6 +1804,8 @@ export function XApplicationView({
             isOpen={importFiles.length > 0}
             endpoint={application.importEndpoint}
             files={importFiles}
+            resolution={application.importResolution}
+            arquivoUnico={application.importSingleFile === true}
             onClose={() => setImportFiles([])}
             onFinished={() => { void refetch(); }}
           />

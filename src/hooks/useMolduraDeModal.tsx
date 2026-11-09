@@ -203,10 +203,19 @@ export function useMolduraDeModal({
       pEvento.stopPropagation();
       // Redimensionado à mão, o cartão deixa de obedecer aos pisos e tetos das classes (min-w, max-w,
       // max-h em %): quem limita agora é a área, no cálculo abaixo.
+      //
+      // MEDE ANTES DE SOLTAR, e fixa a medida no MESMO passo (defeito de 2026-11-09). Soltar o teto antes de dar
+      // altura ao cartão o fazia crescer, naquele instante, até o conteúdo inteiro — nos custos da nota, a grade
+      // com todas as linhas e sem rolagem —, e a medida do gesto já saía gigante, maior que a área.
+      const atual = cartao.getBoundingClientRect();
+      cartao.style.width = `${atual.width}px`;
+      cartao.style.height = `${atual.height}px`;
       cartao.style.minWidth = '0';
       cartao.style.maxWidth = 'none';
       cartao.style.minHeight = '0';
       cartao.style.maxHeight = 'none';
+      tamanho.current ??= { largura: atual.width, altura: atual.height };
+      cartao.dataset.redimensionado = 'true';
     }
 
     gesto.current = {

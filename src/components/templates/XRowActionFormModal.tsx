@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, FileText } from 'lucide-react';
+import { AlertTriangle, FileText, Loader2 } from 'lucide-react';
 
 import type { XRowAction, XDataEditor } from '@core/types';
 import { XButtonColor, XUIEditorType } from '@core/types';
@@ -28,6 +28,7 @@ import { XModalShell } from './XModalShell';
 import { XJanelaDocumento } from './XJanelaDocumento';
 import { CLOSE_BUTTON_STYLE, XBUTTON_PALETTE, resolverTokenDeFiltro, getFieldValue } from '@core/lib';
 import { useRecalculoAoDigitar } from '@core/hooks/useRecalculoAoDigitar';
+import { pendenciasDaGrade } from '@core/lib/celulasObrigatorias';
 
 interface XRowActionFormModalProps {
   action: XRowAction;
@@ -54,6 +55,11 @@ interface XRowActionFormModalProps {
    * mesmo sem o usuário tê-lo tocado — validação de formulário marca todos os campos (dono, 2026-10-12).
    */
   serverErrors?: Record<string, string>;
+  /**
+   * Quem abriu o modal é quem executa a confirmação (o `onSubmit`), e não o `endpoint` da ação: a escolha de produtos
+   * da importação confirma no endpoint da IMPORTAÇÃO. Sem isto, ação sem endpoint é modal só de leitura.
+   */
+  confirmaPorQuemAbriu?: boolean;
   isBusy?: boolean;
   onSubmit: (pValues: Record<string, unknown>) => void;
   onCancel: () => void;
@@ -77,6 +83,7 @@ export function XRowActionFormModal({
   rowData,
   initialValues,
   serverErrors,
+  confirmaPorQuemAbriu = false,
   isBusy = false,
   onSubmit,
   onCancel,
@@ -165,6 +172,14 @@ export function XRowActionFormModal({
         continue;
       }
 
+      // GRADE com célula obrigatória por linha (isRequired na coluna): a frase nomeia a coluna e as linhas que
+      // faltam. Vale desde a abertura — ver `gradePendente`.
+      const daGrade = pendenciasDaGrade(editor?.gridColumns, valor);
+      if (daGrade) {
+        encontrados[nome] = daGrade;
+        continue;
+      }
+
       if (typeof valor === 'string') {
         const texto = valor.trim();
 
@@ -183,9 +198,16 @@ export function XRowActionFormModal({
 
   const podeExecutar = Object.keys(erros).length === 0;
 
+  // Grade com célula obrigatória ainda vazia: o Confirmar fica DESABILITADO, e a frase aparece sob a grade sem
+  // esperar o clique (dono, 2026-11-09: a nota só se importa depois de escolhidos todos os produtos). Os demais
+  // erros seguem a regra de sempre — aparecem ao tocar ou ao confirmar.
+  const gradePendente = useMemo(
+    () => campos.some((pCampo) => pendenciasDaGrade(pCampo.editor?.gridColumns, valores[pCampo.fieldName]) !== null),
+    [campos, valores]);
+
   // Ação SEM endpoint não executa nada: o modal é só para LER (visualizar o registro da linha). Some o
   // "Confirmar" e o único gesto é fechar.
-  const somenteLeitura = !action.endpoint;
+  const somenteLeitura = !action.endpoint && !confirmaPorQuemAbriu;
 
   // `pBindings`: campos-IRMÃOS que a seleção deste editor preenche (fieldBindings do back). É o que leva
   // o SALDO da parcela escolhida para "Valor pago", e o que a conta única pré-selecionada aplica. Sem
@@ -244,7 +266,9 @@ export function XRowActionFormModal({
   const temDemonstrativo = campos.some((pCampo) => pCampo.editor?.editorType === XUIEditorType.Statement);
   // Lista de linhas (a grade dos itens nos custos da nota, dono 2026-11-08) pede a largura das colunas: o
   // piso sobe para o extragrande, e o cartão continua crescendo com o conteúdo até o teto de 90% da área.
-  const temLista = campos.some((pCampo) => pCampo.editor?.customEditorName === 'XReadOnlyListEditor');
+  // A grade editável de itens (os itens da nota a importar, dono 2026-11-09) pede a mesma largura.
+  const temLista = campos.some((pCampo) =>
+    pCampo.editor?.customEditorName === 'XReadOnlyListEditor' || pCampo.editor?.customEditorName === 'XItemsGridEditor');
   // Campo que ABSORVE A SOBRA vertical (`fillsHeight`, declarado no back): o formulário não rola, só ele (dono,
   // 2026-11-08 — a grade dos itens nos custos da nota rola sem levar junto os valores, o cabeçalho e o rodapé).
   // Ele sai da grade de 32 colunas e vai abaixo dela, ocupando a altura que sobrar.
@@ -274,7 +298,8 @@ export function XRowActionFormModal({
     const nome = pCampo.fieldName;
     // O erro LOCAL (regra declarada no editor) vale depois de tocado; o do SERVIDOR vale até o
     // usuário mexer naquele campo — é a marca que diz onde a recusa aconteceu.
-    const erro = (tocados[nome] ? erros[nome] : undefined)
+    const pendenteNaGrade = pendenciasDaGrade(pCampo.editor?.gridColumns, valores[nome]);
+    const erro = (tocados[nome] || pendenteNaGrade ? erros[nome] : undefined)
       ?? (corrigidosDesdeServidor[nome] ? undefined : erroDoServidor(nome));
 
     // Sem rótulo aqui: o editor já desenha o dele (XEditorLabel), com o asterisco do obrigatório.
@@ -362,7 +387,7 @@ export function XRowActionFormModal({
           <button
             type="button"
             onClick={submeter}
-            disabled={isBusy}
+            disabled={isBusy || gradePendente}
             // Distinto do `form-save` do formulário: aqui o que se confirma é uma AÇÃO sobre um
             // registro (lançar custo, cancelar nota), não a gravação de um formulário.
             data-testid="rowaction-confirm"
@@ -371,13 +396,27 @@ export function XRowActionFormModal({
                        disabled:opacity-50 disabled:cursor-not-allowed
                        focus:outline-none focus:ring-2 focus:ring-brand-primary/40 ${classeBotao}`}
           >
-            {'Confirmar'}
+            {action.confirmTitle || 'Confirmar'}
           </button>
           )}
         </>
       }
     >
-      <div className={`px-4 sm:px-5 py-4 space-y-3 ${elastico ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
+      <div className={`relative px-4 sm:px-5 py-4 space-y-3 ${elastico ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
+        {/* OCUPADO (dono, 2026-11-09): enquanto a confirmação corre no servidor — a importação da nota com os
+            produtos escolhidos, o cancelamento na SEFAZ —, um spinner cobre o corpo do diálogo. Os campos já ficam
+            travados pelo `isBusy`; a camada diz POR QUE nada responde, em vez de parecer que a tela travou. */}
+        {isBusy && (
+          <div
+            role="status"
+            aria-live="polite"
+            data-testid="rowaction-ocupado"
+            className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-brand-surface/70"
+          >
+            <Loader2 className="w-8 h-8 animate-spin text-brand-primary" />
+            <span className="text-ui-sm font-medium text-brand-text-primary">{'Processando…'}</span>
+          </div>
+        )}
         {/* Os campos numa grade de 32 colunas, como o painel de edição da grade: o campo que declara
             colSpan divide a linha com os vizinhos; o que não declara (colSpan 1, o padrão) ocupa a
             linha inteira, como sempre ocupou aqui. */}
