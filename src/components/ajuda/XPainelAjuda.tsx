@@ -110,7 +110,13 @@ const CLASSE_DO_CORPO = [
   '[&_td]:border-b [&_td]:border-border-light [&_td]:py-1 [&_td]:pr-2 [&_td]:align-top',
   '[&_img]:rounded [&_img]:border [&_img]:border-border-light [&_img]:my-2 [&_img]:max-w-full',
   // A figura com legenda e a caixa de destaque, como no manual publicado (dono, 2026-11-09): mesma anatomia, cores da casca.
-  '[&_figure]:my-3 [&_figure]:mx-0 [&_figure_img]:my-0 [&_figure_img]:shadow-sm [&_figcaption]:mt-1 [&_figcaption]:text-ui-xs [&_figcaption]:text-brand-text-secondary',
+  '[&_figure]:my-4 [&_figure]:mx-0 [&_figure_img]:my-0 [&_figcaption]:mt-2 [&_figcaption]:text-ui-xs [&_figcaption]:text-brand-text-secondary',
+  // O HALO da captura (dono, 2026-11-10): a foto de uma tela tem as cores da própria casca e sumia no painel — sem
+  // contorno, não se via onde a imagem acabava e o texto começava. O anel e o brilho usam a cor primária do TEMA,
+  // então acompanham qualquer tema; ao passar o mouse o brilho cresce, sem mexer no tamanho (nada pula na leitura).
+  '[&_figure_img]:rounded-lg [&_figure_img]:border-transparent [&_figure_img]:transition-shadow [&_figure_img]:duration-200',
+  '[&_figure_img]:shadow-[0_0_0_1px_hsl(var(--brand-primary)/0.35),0_0_22px_2px_hsl(var(--brand-primary)/0.38)]',
+  '[&_figure_img:hover]:shadow-[0_0_0_1px_hsl(var(--brand-primary)/0.6),0_0_34px_6px_hsl(var(--brand-primary)/0.55)]',
   '[&_blockquote]:border-l-2 [&_blockquote]:border-brand-primary [&_blockquote]:pl-3 [&_blockquote]:mb-2 [&_blockquote:not(.nota)]:italic',
   '[&_blockquote.nota]:rounded-r [&_blockquote.nota]:py-1.5 [&_blockquote.nota]:pr-2 [&_blockquote.nota]:bg-info-bg [&_blockquote.nota]:border-info',
   '[&_blockquote.nota-atencao]:bg-warning-bg [&_blockquote.nota-atencao]:border-warning [&_blockquote.nota-cuidado]:bg-warning-bg [&_blockquote.nota-cuidado]:border-warning',
