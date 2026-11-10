@@ -75,8 +75,9 @@ export interface XImportDialogProps {
    */
   resolution?: XRowAction | null;
   /**
-   * ARQUIVO ÚNICO (`XApplication.importSingleFile`, dono 2026-11-09): sem o quadro de progresso. Importou ⇒ a grade
-   * recarrega e nada aparece; faltou decisão ⇒ só o formulário de resolução; desistiu ⇒ fecha calado; falhou ⇒ o aviso
+   * ARQUIVO ÚNICO (`XApplication.importSingleFile`, dono 2026-11-09): sem o quadro de progresso. Enquanto o arquivo
+   * está em voo, um véu de espera cobre a área da App (dono, 2026-11-10). Importou ⇒ a grade recarrega e o véu
+   * some; faltou decisão ⇒ só o formulário de resolução; desistiu ⇒ fecha calado; falhou ⇒ o aviso
    * de erro da área da App, que o `api` já emite com o motivo. Um quadro "1 de 1 arquivos" não diz nada que a grade
    * não diga.
    */
@@ -402,6 +403,23 @@ export function XImportDialog({
         </footer>
       </XCartaoDeModal>
     </div>
+    )}
+
+    {/* ARQUIVO ÚNICO TEM VÉU DE ESPERA (dono, 2026-11-10). Sem o quadro de progresso, a importação corria sem
+        sinal nenhum: a tela parecia parada, o usuário mandava o mesmo arquivo de novo e as duas requisições
+        disputavam o mesmo documento. O véu cobre a área da App (não a janela) enquanto o arquivo está em voo —
+        diz o que está acontecendo e impede o segundo envio. Some quando a resolução abre: aí quem fala é o
+        formulário dela, que tem o próprio indicador ao confirmar. */}
+    {arquivoUnico && isRunning && !emAberto && (
+      <div
+        className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/30 backdrop-blur-[1px]"
+        role="status"
+        aria-live="polite"
+        data-testid="import-ocupado"
+      >
+        <Loader2 className="h-10 w-10 animate-spin text-brand-primary" />
+        <span className="text-ui text-white/90">{`Importando ${files[0]?.name ?? 'o arquivo'}…`}</span>
+      </div>
     )}
 
     {/* O formulário de RESOLUÇÃO, irmão do diálogo e no mesmo quadro (a área da App), por cima dele: é o modal de

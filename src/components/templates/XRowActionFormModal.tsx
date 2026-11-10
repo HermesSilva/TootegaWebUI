@@ -24,6 +24,7 @@ import { AlertTriangle, FileText, Loader2 } from 'lucide-react';
 import type { XRowAction, XDataEditor } from '@core/types';
 import { XButtonColor, XUIEditorType } from '@core/types';
 import { XEditor } from './editors/XEditor';
+import { api } from '@core/lib/api';
 import { XModalShell } from './XModalShell';
 import { XJanelaDocumento } from './XJanelaDocumento';
 import { CLOSE_BUTTON_STYLE, XBUTTON_PALETTE, resolverTokenDeFiltro, getFieldValue } from '@core/lib';
@@ -260,6 +261,31 @@ export function XRowActionFormModal({
   // Janela do documento de apoio aberta (endpoint já resolvido e título), ou nenhuma.
   const [janela, setJanela] = useState<{ endpoint: string; titulo: string } | null>(null);
 
+  // DOCUMENTO DA AÇÃO (dono, 2026-11-10): o botão do rodapé BAIXA o arquivo, sem janela de visualização — o
+  // navegador salva (ou pergunta onde salvar) com o nome que o back montou. O pedido leva os valores que estão
+  // no formulário no clique, confirmados ou não: o documento sai com o que está na tela. A falha já sai no
+  // diálogo que o `api` emite; aqui só se desfaz o estado de "gerando".
+  const [gerandoDocumento, setGerandoDocumento] = useState(false);
+  const baixarDocumento = useCallback(async () => {
+    if (!action.documentEndpoint || gerandoDocumento)
+      return;
+
+    setGerandoDocumento(true);
+    try {
+      const { blob, filename } = await api.downloadBlob(resolverEndpoint(action.documentEndpoint), { ...valores });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // O `api` já mostrou o motivo no diálogo da área do App (aviso ou erro, com a operação e a causa).
+    } finally {
+      setGerandoDocumento(false);
+    }
+  }, [action.documentEndpoint, gerandoDocumento, resolverEndpoint, valores]);
+
   const temTextoLongo = campos.some((pCampo) => pCampo.editor?.editorType === XUIEditorType.TextArea);
   // Demonstrativo pede largura para rótulo, detalhe e valor caberem numa linha sem quebrar — o piso
   // grande (42rem) basta, e o dono o quis 25% mais estreito que o extragrande (2026-10-25).
@@ -368,6 +394,24 @@ export function XRowActionFormModal({
       onClose={onCancel}
       footer={
         <>
+          {/* DOCUMENTO DA AÇÃO (dono, 2026-11-10): o botão que gera o documento fica no rodapé, com os demais,
+              e à ESQUERDA deles (`mr-auto`): não é desfecho do diálogo — não fecha nem confirma —, e separado
+              não se confunde com Confirmar. Baixa o arquivo direto, sem janela de visualização. */}
+          {action.documentEndpoint && (
+            <button
+              type="button"
+              onClick={() => { void baixarDocumento(); }}
+              disabled={isBusy || gerandoDocumento}
+              aria-busy={gerandoDocumento}
+              data-testid="rowaction-documento"
+              className={`mr-auto inline-flex items-center gap-2 px-4 py-3 sm:py-2 text-ui font-medium rounded-lg
+                          transition-colors min-h-touch sm:min-h-[36px] disabled:opacity-50 disabled:cursor-not-allowed
+                          ${XBUTTON_PALETTE[XButtonColor.Document]}`}
+            >
+              {gerandoDocumento ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+              {action.documentButtonTitle || 'Baixar documento'}
+            </button>
+          )}
           {/* "Fechar", não "Cancelar": num diálogo cujo objeto É cancelar a nota, um botão escrito
               "Cancelar" para DESISTIR diria o contrário do que faz. O mesmo rótulo de dispensa dos
               demais formulários da casa. */}

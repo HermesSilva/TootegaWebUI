@@ -1150,6 +1150,14 @@ export interface XRowAction extends XModel {
    * dentro dele. Falso ⇒ fica no quadro de quem chamou (a regra geral de contenção).
    */
   useAppArea?: boolean;
+  /**
+   * DOCUMENTO DA AÇÃO: botão no RODAPÉ do modal de coleta, junto de Fechar e Confirmar, que BAIXA o arquivo
+   * deste endpoint, com o nome que o back lhe deu — sem janela de visualização. POST com os valores do
+   * formulário no clique (confirmados ou não); aceita `{id}` e `{rowId}`. Vazio ⇒ sem botão.
+   */
+  documentEndpoint?: string;
+  /** Rótulo do botão do documento da ação. Vazio ⇒ "Baixar documento". */
+  documentButtonTitle?: string;
 }
 
 // ============================================================================
