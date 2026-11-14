@@ -12,7 +12,7 @@
  * só-leitura do formulário — não um campo editável desabilitado.
  */
 
-import { type JSX } from 'react';
+import { useCallback, useEffect, useRef, type JSX, type KeyboardEvent } from 'react';
 import { useMascaraNumerica } from './useMascaraNumerica';
 
 interface XCurrencyCellProps {
@@ -31,6 +31,12 @@ interface XCurrencyCellProps {
    * erro, `aria-invalid`) e a frase aparece logo abaixo. Ausente ⇒ célula normal.
    */
   invalido?: string;
+  /**
+   * Passo da RODA DO MOUSE e das setas ↑/↓ (dono, 2026-11-13): com a célula em foco, cada giro soma ou subtrai
+   * este tanto. Ausente ou zero ⇒ a roda não mexe no valor. Só age com FOCO: sobre a célula apenas apontada, a
+   * roda continua rolando a grade.
+   */
+  passoDaRoda?: number;
 }
 
 const base = 'w-full h-editor px-2 text-ui text-right rounded-md border border-border';
@@ -45,6 +51,7 @@ export function XCurrencyCell({
   readOnly,
   permiteNegativo = false,
   invalido,
+  passoDaRoda,
 }: XCurrencyCellProps): JSX.Element {
   const bloqueado = Boolean(disabled) || Boolean(readOnly);
 
@@ -54,6 +61,50 @@ export function XCurrencyCell({
     casas: decimalPlaces,
     permiteNegativo,
   });
+
+  // RODA DO MOUSE E SETAS (dono, 2026-11-13). O passo soma ou subtrai do valor corrente, sem descer abaixo
+  // de zero (salvo coluna que aceita negativo), e o texto da célula acompanha na hora (`reexibir`: focada,
+  // ela mostra o que a máscara guardou, não o modelo).
+  const passo = !bloqueado && passoDaRoda && passoDaRoda > 0 ? passoDaRoda : 0;
+  const estado = useRef({ value, onChange, reexibir: mascara.reexibir, decimalPlaces, permiteNegativo });
+  estado.current = { value, onChange, reexibir: mascara.reexibir, decimalPlaces, permiteNegativo };
+
+  const somar = useCallback((pSinal: 1 | -1): void => {
+    const atual = estado.current;
+    const numero = Number(atual.value ?? 0);
+    const fator = 10 ** atual.decimalPlaces;
+    let novo = Math.round(((Number.isFinite(numero) ? numero : 0) + pSinal * passo) * fator) / fator;
+    if (!atual.permiteNegativo && novo < 0)
+      novo = 0;
+    atual.reexibir(novo);
+    atual.onChange(novo);
+  }, [passo]);
+
+  // O ouvinte é NATIVO e não passivo: o `onWheel` do React é passivo, e nele o `preventDefault` não impede a
+  // grade de rolar junto com a mudança do valor.
+  const { inputRef } = mascara;
+  useEffect(() => {
+    const entradaDaCelula = inputRef.current;
+    if (!entradaDaCelula || passo === 0)
+      return;
+
+    const aoGirar = (pEvento: WheelEvent): void => {
+      if (document.activeElement !== entradaDaCelula || pEvento.deltaY === 0)
+        return;
+      pEvento.preventDefault();
+      somar(pEvento.deltaY < 0 ? 1 : -1);
+    };
+
+    entradaDaCelula.addEventListener('wheel', aoGirar, { passive: false });
+    return () => entradaDaCelula.removeEventListener('wheel', aoGirar);
+  }, [inputRef, passo, somar]);
+
+  const aoTeclar = (pEvento: KeyboardEvent<HTMLInputElement>): void => {
+    if (passo === 0 || (pEvento.key !== 'ArrowUp' && pEvento.key !== 'ArrowDown'))
+      return;
+    pEvento.preventDefault();
+    somar(pEvento.key === 'ArrowUp' ? 1 : -1);
+  };
 
   if (bloqueado)
     return (
@@ -71,6 +122,7 @@ export function XCurrencyCell({
       onChange={mascara.aoDigitar}
       onFocus={mascara.aoFocar}
       onBlur={mascara.aoSair}
+      onKeyDown={aoTeclar}
       aria-invalid={invalido ? true : undefined}
       title={invalido}
       className={`${invalido ? base.replace('border-border', 'border-danger') : base} ${editavel}`}

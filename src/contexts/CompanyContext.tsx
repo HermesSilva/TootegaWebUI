@@ -3,6 +3,7 @@ import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api, setCurrentCompanyID } from '@core/lib/api';
 import { getFieldValue } from '@core/lib/fieldAccess';
 import { useAuth } from '@core/hooks/useAuth';
+import { recarregarPagina } from '@core/lib/recarregarPagina';
 
 const STORAGE_KEY = 'Tootega_company';
 
@@ -89,7 +90,8 @@ function readStoredCompanyID(pUserID: string): number | null {
   }
 }
 
-function writeStoredCompanyID(pUserID: string, pCompanyID: number | null): void {
+/** Grava a escolha. Devolve se ela ficou gravada — a recarga da troca depende disso. */
+function writeStoredCompanyID(pUserID: string, pCompanyID: number | null): boolean {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     const mapa = stored ? (JSON.parse(stored) as Record<string, number>) : {};
@@ -98,8 +100,10 @@ function writeStoredCompanyID(pUserID: string, pCompanyID: number | null): void 
     else
       mapa[pUserID] = pCompanyID;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(mapa));
+    return true;
   } catch {
     // Armazenamento indisponível (modo privado/quota): a empresa vale só para esta sessão.
+    return false;
   }
 }
 
@@ -189,10 +193,23 @@ export function CompanyProvider({ children }: CompanyProviderProps): JSX.Element
   }, [isAuthenticated, userID]);
 
   const selectCompany = useCallback((pCompany: Company): void => {
+    const anterior = company?.sysxPessoaID ?? null;
+    const gravada = userID ? writeStoredCompanyID(userID, pCompany.sysxPessoaID) : false;
+
+    // TROCAR de empresa recarrega a página (dono, 2026-11-08). Invalidar o cache não basta: as abas
+    // abertas, os formulários e o estado das Apps foram montados com o dado da empresa anterior, e
+    // seguiam na tela depois da troca. Recarregar devolve a casca ao estado de entrada, e o efeito de
+    // autenticação acima reconfirma a escolha gravada. Só quando há o que descartar e a escolha ficou
+    // gravada: a primeira escolha não tem estado anterior, a mesma empresa não é troca, e sem gravar a
+    // recarga perderia a escolha e levaria o usuário de volta ao diálogo obrigatório.
+    if (anterior !== null && anterior !== pCompany.sysxPessoaID && gravada) {
+      setCurrentCompanyID(pCompany.sysxPessoaID);
+      recarregarPagina();
+      return;
+    }
+
     setCompany(pCompany);
     setCurrentCompanyID(pCompany.sysxPessoaID);
-    if (userID)
-      writeStoredCompanyID(userID, pCompany.sysxPessoaID);
 
     // Descarta o que foi lido sob a empresa ANTERIOR. A empresa já entra na queryKey
     // (`applicationKeys`), então a troca por si só muda a chave e força ida ao servidor; isto aqui
@@ -201,7 +218,7 @@ export function CompanyProvider({ children }: CompanyProviderProps): JSX.Element
     void queryClient?.invalidateQueries();
 
     setIsSelectorOpen(false);
-  }, [userID, queryClient]);
+  }, [company, userID, queryClient]);
 
   /**
    * Relê <c>/sys/companies</c> e atualiza SÓ a lista.

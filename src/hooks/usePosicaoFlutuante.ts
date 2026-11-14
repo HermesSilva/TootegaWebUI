@@ -19,6 +19,8 @@ export interface OpcoesUsePosicaoFlutuante {
   alturaMaxima?: number;
   /** Largura imposta pelo chamador (o picker). Ausente ⇒ a medida do painel, nunca menor que o campo. */
   largura?: (pCampo: DOMRect) => number;
+  /** Borda do painel que coincide com a do campo, abaixo ou acima dele. Ausente ⇒ esquerda. */
+  alinhamento?: 'esquerda' | 'direita';
   /** Desliga o acompanhamento (o usuário arrastou o painel para onde quis). */
   desligado?: boolean;
 }
@@ -46,7 +48,7 @@ export function usePosicaoFlutuante(
   pPainelRef: RefObject<HTMLElement | null>,
   pOpcoes: OpcoesUsePosicaoFlutuante = {},
 ): { posicao: PosicaoFlutuanteMedida; reposicionar: () => void } {
-  const { alturaMaxima, largura, desligado = false } = pOpcoes;
+  const { alturaMaxima, largura, alinhamento, desligado = false } = pOpcoes;
   const [posicao, setPosicao] = useState<PosicaoFlutuanteMedida>(INICIAL);
   const observadorRef = useRef<ResizeObserver | null>(null);
   const observadoRef = useRef<HTMLElement | null>(null);
@@ -72,13 +74,13 @@ export function usePosicaoFlutuante(
         : painel.scrollHeight + (painel.offsetHeight - painel.clientHeight);
 
     const nova: PosicaoFlutuanteMedida = {
-      ...posicaoFlutuante(r, { largura: larguraPainel, altura: alturaPainel }),
+      ...posicaoFlutuante(r, { largura: larguraPainel, altura: alturaPainel, alinhamento }),
       larguraCampo: r.width,
       largura: larguraImposta,
       medido: !!painel,
     };
     setPosicao((pAtual) => (igual(pAtual, nova) ? pAtual : nova));
-  }, [pCampoRef, pPainelRef, alturaMaxima, largura]);
+  }, [pCampoRef, pPainelRef, alturaMaxima, largura, alinhamento]);
 
   // Antes da pintura: com useEffect o painel apareceria por um quadro fora do lugar e "saltaria".
   useLayoutEffect(() => {

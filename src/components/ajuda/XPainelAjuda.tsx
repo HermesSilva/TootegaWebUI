@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type JSX, type PointerEvent as ReactPointerEvent } from 'react';
-import { ArrowLeft, BookOpen, Loader2, Search, X } from 'lucide-react';
+import { ArrowLeft, BookOpen, Loader2, Search, Sparkles, X } from 'lucide-react';
 import { api } from '@core/lib/api';
+import { EVENTO_ABRIR_JACI } from '@core/components/jaci/PainelJaci';
 import { mensagemDeFalha } from '@core/lib/mensagemDeFalha';
 import { usePreferenciaDoUsuario } from '@core/hooks/usePreferenciaDoUsuario';
 import type { RespostaDeTrecho, TrechoDeAjuda } from './XJanelaDeTrecho';
@@ -108,7 +109,18 @@ const CLASSE_DO_CORPO = [
   '[&_table]:w-full [&_table]:text-ui-xs [&_table]:mb-3 [&_th]:text-left [&_th]:font-semibold [&_th]:border-b [&_th]:border-border-light [&_th]:py-1',
   '[&_td]:border-b [&_td]:border-border-light [&_td]:py-1 [&_td]:pr-2 [&_td]:align-top',
   '[&_img]:rounded [&_img]:border [&_img]:border-border-light [&_img]:my-2 [&_img]:max-w-full',
-  '[&_blockquote]:border-l-2 [&_blockquote]:border-brand-primary [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:mb-2',
+  // A figura com legenda e a caixa de destaque, como no manual publicado (dono, 2026-11-09): mesma anatomia, cores da casca.
+  '[&_figure]:my-4 [&_figure]:mx-0 [&_figure_img]:my-0 [&_figcaption]:mt-2 [&_figcaption]:text-ui-xs [&_figcaption]:text-brand-text-secondary',
+  // O HALO da captura (dono, 2026-11-10): a foto de uma tela tem as cores da própria casca e sumia no painel — sem
+  // contorno, não se via onde a imagem acabava e o texto começava. O anel e o brilho usam a cor primária do TEMA,
+  // então acompanham qualquer tema; ao passar o mouse o brilho cresce, sem mexer no tamanho (nada pula na leitura).
+  '[&_figure_img]:rounded-lg [&_figure_img]:border-transparent [&_figure_img]:transition-shadow [&_figure_img]:duration-200',
+  '[&_figure_img]:shadow-[0_0_0_1px_hsl(var(--brand-primary)/0.35),0_0_22px_2px_hsl(var(--brand-primary)/0.38)]',
+  '[&_figure_img:hover]:shadow-[0_0_0_1px_hsl(var(--brand-primary)/0.6),0_0_34px_6px_hsl(var(--brand-primary)/0.55)]',
+  '[&_blockquote]:border-l-2 [&_blockquote]:border-brand-primary [&_blockquote]:pl-3 [&_blockquote]:mb-2 [&_blockquote:not(.nota)]:italic',
+  '[&_blockquote.nota]:rounded-r [&_blockquote.nota]:py-1.5 [&_blockquote.nota]:pr-2 [&_blockquote.nota]:bg-info-bg [&_blockquote.nota]:border-info',
+  '[&_blockquote.nota-atencao]:bg-warning-bg [&_blockquote.nota-atencao]:border-warning [&_blockquote.nota-cuidado]:bg-warning-bg [&_blockquote.nota-cuidado]:border-warning',
+  '[&_blockquote.nota-dica]:bg-success-bg [&_blockquote.nota-dica]:border-success [&_blockquote.nota-importante]:bg-danger-bg [&_blockquote.nota-importante]:border-danger',
   '[&_a]:text-brand-primary [&_a]:underline [&_code]:text-ui-xs [&_code]:bg-brand-surface-2 [&_code]:px-1 [&_code]:rounded',
 ].join(' ');
 
@@ -323,6 +335,14 @@ export function XPainelAjuda({ app, tituloDaApp, aba, onFechar }: XPainelAjudaPr
     window.open(ancora ? `${MANUAL}#${ancora}` : MANUAL, '_blank', 'noopener,noreferrer');
   }, [trechoAtual, partes, documento]);
 
+  /**
+   * A Jaci, a partir daqui (dono, 2026-11-09): o painel da casca abre pelo evento que ela já ouve, com o começo da
+   * pergunta escrito — a Jaci recebe a tela em foco como contexto, então a pessoa só diz o que quer saber.
+   */
+  const perguntarAJaci = useCallback(() => {
+    window.dispatchEvent(new CustomEvent(EVENTO_ABRIR_JACI, { detail: { pergunta: `Sobre a tela ${tituloDaApp}: ` } }));
+  }, [tituloDaApp]);
+
   // A busca do painel não devolve MENSAGENS (dono, 2026-10-21): elas não são parte da ajuda da tela.
   const elementosDaBusca = (resultado?.elementos ?? []).filter((pE) => pE.tipo !== 'mensagem');
 
@@ -376,6 +396,16 @@ export function XPainelAjuda({ app, tituloDaApp, aba, onFechar }: XPainelAjudaPr
           <span className="text-ui-xs text-brand-text-secondary">{ROTULO_DO_TIPO[documento.tipo] ?? documento.tipo}</span>
         )}
         <span className="flex-1" />
+        <button
+          type="button"
+          onClick={perguntarAJaci}
+          className="rounded p-1 hover:bg-brand-surface-2"
+          title={`Perguntar à Jaci sobre a tela ${tituloDaApp}`}
+          aria-label={`Perguntar à Jaci sobre a tela ${tituloDaApp}`}
+          data-testid="painel-ajuda-jaci"
+        >
+          <Sparkles className="h-4 w-4" />
+        </button>
         <button
           type="button"
           onClick={abrirManualCompleto}

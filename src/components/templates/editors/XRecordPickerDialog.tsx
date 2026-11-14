@@ -32,6 +32,7 @@ import { useLookupSearch } from '@core/hooks/useApplication';
 import { ZIndexManager } from '@core/lib/zIndexManager';
 import { usePosicaoFlutuante } from '@core/hooks/usePosicaoFlutuante';
 import { useMolduraDeModal } from '@core/hooks/useMolduraDeModal';
+import { useQuadroDoFormulario } from '@core/hooks/useQuadroDoFormulario';
 import { XModalShell } from '../XModalShell';
 import { formatCurrency, formatDocument, formatNumber } from '@core/lib';
 
@@ -82,6 +83,11 @@ interface XRecordPickerDialogProps {
    * que é o caso de quem abre por botão (a grade de itens).
    */
   ancora?: React.RefObject<HTMLElement | null>;
+  /**
+   * Com âncora, qual borda do popover coincide com a do campo: `esquerda` (o padrão) ou `direita` — a lupa na última
+   * coluna de uma grade abre com a direita alinhada à direita da célula, crescendo para dentro da grade.
+   */
+  alinhamento?: 'esquerda' | 'direita';
 }
 
 /** Espera antes de consultar: o usuário digita, não dispara uma busca por tecla. */
@@ -200,7 +206,7 @@ function XCriterioCombinado({ criterio, valor, filtros, onChange }: XCriterioCom
 }
 
 export function XRecordPickerDialog({
-  endpoint, title, searchFields, searchPlaceholder, columns, onSelect, onSelectMany, onClose, ancora,
+  endpoint, title, searchFields, searchPlaceholder, columns, onSelect, onSelectMany, onClose, ancora, alinhamento,
   multiSelect = false, fixedFilters,
 }: XRecordPickerDialogProps): JSX.Element {
 
@@ -293,6 +299,11 @@ export function XRecordPickerDialog({
   // --- Popover: posição, fechamento por Esc e por clique fora ---------------------------------
 
   const ehPopover = !!ancora;
+
+  // O DIÁLOGO LEMBRA ONDE FICOU (dono, 2026-11-13): posição e tamanho vão ao perfil do usuário, como os dos
+  // formulários, e voltam na próxima abertura. A chave é o endpoint da busca: cada seletor (produtos, notas,
+  // pessoas) guarda o seu quadro. O popover não usa: ele nasce ancorado ao campo que o abriu.
+  const [quadroSalvo, salvarQuadro] = useQuadroDoFormulario(`seletor${endpoint}`);
   const painelRef = useRef<HTMLDivElement>(null);
   // Moldura comum a todo diálogo (dono, 2026-10-25): borda, brilho e redimensionar pelas bordas. O painel
   // é posto por top/left (ancorado), não centrado; o arrasto continua o dele, pelo cabeçalho.
@@ -319,6 +330,7 @@ export function XRecordPickerDialog({
     (pCampo: DOMRect): number => Math.min(Math.max(pCampo.width, LARGURA_POPOVER), window.innerWidth - 16), []);
   const { posicao } = usePosicaoFlutuante(ehPopover, campoRef, painelRef, {
     largura: larguraDoPainel,
+    alinhamento,
     desligado: arrastado !== null,
   });
 
@@ -406,7 +418,8 @@ export function XRecordPickerDialog({
   ) : null;
 
   const corpo = (
-      <div className={ehPopover ? 'p-3 space-y-3' : 'p-4 space-y-3 sm:min-w-[38rem]'}>
+      // DIÁLOGO: coluna flexível que ocupa a altura do cartão; a grade absorve a sobra (ver abaixo).
+      <div className={ehPopover ? 'p-3 space-y-3' : 'p-4 flex flex-col gap-3 flex-1 min-h-0 sm:min-w-[38rem]'}>
         {/* Critérios: um campo por critério declarado, lado a lado; sem nenhum, a pesquisa livre. */}
         {criterios.length > 0 ? (
           <div className="flex items-end gap-2">
@@ -457,7 +470,10 @@ export function XRecordPickerDialog({
 
         {/* border-separate (não collapse): é o que faz o cabeçalho fixo funcionar sem sobrepor a
             primeira linha. O fundo do cabeçalho é SÓLIDO, senão as linhas apareceriam através dele. */}
-        <div className={`overflow-auto rounded-lg border border-border ${ehPopover ? 'max-h-[260px] min-h-[120px]' : 'max-h-[420px] min-h-[240px]'}`}>
+        {/* NO DIÁLOGO a grade ACOMPANHA a altura do cartão (dono, 2026-11-13): nasce com 420px (a base do
+            flex) e, redimensionado o diálogo, cresce ou encolhe com ele. Quem rola é a grade, nunca o corpo
+            do diálogo, e não sobra faixa vazia abaixo dela. No popover, ancorado ao campo, segue com teto. */}
+        <div className={`overflow-auto rounded-lg border border-border ${ehPopover ? 'max-h-[260px] min-h-[120px]' : 'flex-[1_1_420px] min-h-[120px]'}`}>
           <table className="w-full border-separate border-spacing-0 text-ui">
             <thead>
               <tr>
@@ -622,6 +638,10 @@ export function XRecordPickerDialog({
       size="lg"
       variant="inline"
       draggable
+      // O corpo não rola: é a grade, dentro dele, que absorve a altura e rola sozinha.
+      rolarConteudo={false}
+      quadroSalvo={quadroSalvo}
+      aoMudarQuadro={salvarQuadro}
     >
       {corpo}
     </XModalShell>
