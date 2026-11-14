@@ -1,7 +1,8 @@
-import { useState, useCallback, createContext, type ReactNode, type JSX } from 'react';
+import { useState, useCallback, useContext, useEffect, useRef, createContext, type ReactNode, type JSX } from 'react';
 import type { MenuItem, UserMenu } from '@core/types';
 import { safeRandomUUID } from '@core/lib/uuid';
 import { usePreferenciaDoUsuario } from '@core/hooks/usePreferenciaDoUsuario';
+import { AuthContext } from './AuthContext';
 
 /** Chave da preferência "abas no cabeçalho" no perfil do usuário. */
 export const CHAVE_ABAS_NO_CABECALHO = 'casca.abasNoCabecalho';
@@ -98,6 +99,27 @@ export function TabsProvider({ children }: TabsProviderProps): JSX.Element {
   const [tabs, setTabs] = useState<AppTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [abasNoCabecalho, definirAbasNoCabecalho] = usePreferenciaDoUsuario<boolean>(CHAVE_ABAS_NO_CABECALHO, false);
+
+  // AS ABAS SÃO DE QUEM AS ABRIU (dono, 2026-11-14). O estado vive enquanto a página vive, e sair e entrar
+  // com outro usuário não recarrega a página: as telas de um continuavam abertas para o outro, que podia
+  // nem ter direito a elas — foi como uma tela da equipe da plataforma apareceu aberta para um assinante.
+  // Saiu o usuário (logout, sessão expirada) ou entrou outro no lugar ⇒ as abas fecham.
+  //
+  // Só quando HAVIA um usuário antes: a passagem de "ninguém" para o usuário que acabou de entrar não
+  // fecha nada, porque é nesse instante que a casca abre a tela inicial dele.
+  const usuarioID = useContext(AuthContext).user?.id ?? null;
+  const usuarioAnterior = useRef(usuarioID);
+
+  useEffect(() => {
+    const anterior = usuarioAnterior.current;
+    usuarioAnterior.current = usuarioID;
+
+    if (anterior === null || anterior === usuarioID)
+      return;
+
+    setTabs([]);
+    setActiveTabId(null);
+  }, [usuarioID]);
 
   // Update tab titles when menu is refetched (language change)
   const updateTabTitlesFromMenu = useCallback((pMenu: UserMenu) => {
