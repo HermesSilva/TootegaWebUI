@@ -401,6 +401,19 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
   const colunaSoLeitura = (pColuna: XUIGridColumn): boolean =>
     Boolean(pColuna.readOnly) || verdadeiroNoFormulario(pColuna.readOnlyWhenField);
 
+  // CASAS DECIMAIS VINDAS DO FORMULÁRIO (decimalPlacesField; dono, 2026-11-14): a precisão da quantidade é
+  // configuração da empresa, que o formulário busca ao abrir. Devolve o número de casas — zero é inteiro de
+  // verdade — ou `undefined` quando a coluna não declara o campo, ou ele ainda não chegou ou não é 0..6.
+  const casasDoFormulario = (pColuna: XUIGridColumn): number | undefined => {
+    if (!pColuna.decimalPlacesField)
+      return undefined;
+    const bruto = getFieldValue(valoresDoFormulario, pColuna.decimalPlacesField);
+    if (bruto === undefined || bruto === null || bruto === '')
+      return undefined;
+    const casas = Number(bruto);
+    return Number.isInteger(casas) && casas >= 0 && casas <= 6 ? casas : undefined;
+  };
+
   // Larguras proporcionais ao que o modelo declarou (ver larguraNormalizada). No MODO TABELA a
   // proporção é sobre todas as colunas; no modo cartão, sobre as da mesma fileira — cada fileira é
   // uma faixa independente e se distribui por si.
@@ -794,7 +807,8 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
           // Casas decimais declaradas na coluna; 0/ausente ⇒ o padrão da célula, que é DUAS (moeda).
           // Quantidade de peça inteira se lê "25", não "25,00" — e as duas casas que nunca variam
           // são duas casas que o operador confere à toa.
-          decimalPlaces={pColuna.decimalPlaces || undefined}
+          decimalPlaces={casasDoFormulario(pColuna) ?? (pColuna.decimalPlaces || undefined)}
+          passoDaRoda={pColuna.wheelStep || undefined}
           disabled={travada}
           readOnly={numeroSoLeitura}
           onChange={(n) => atualizar(pIndice, pColuna.fieldName, n ?? 0)}
@@ -809,7 +823,8 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
       return (
         <XCurrencyCell
           value={valor}
-          decimalPlaces={0}
+          decimalPlaces={casasDoFormulario(pColuna) ?? 0}
+          passoDaRoda={pColuna.wheelStep || undefined}
           disabled={travada}
           readOnly={numeroSoLeitura}
           onChange={(n) => atualizar(pIndice, pColuna.fieldName, n ?? 0)}

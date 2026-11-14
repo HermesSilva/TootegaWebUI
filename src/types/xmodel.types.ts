@@ -732,6 +732,13 @@ export interface XUIGridColumn {
    * Existe porque nem toda quantidade é moeda: peça inteira se lê `25`, não `25,00`.
    */
   decimalPlaces?: number;
+  /** Passo da roda do mouse e das setas na célula numérica em foco. Zero ou ausente ⇒ a roda não mexe no valor. */
+  wheelStep?: number;
+  /**
+   * Campo do FORMULÁRIO (tipicamente do contexto) com as casas decimais da célula numérica, inclusive zero (inteiro).
+   * Vazio, ausente ou fora de 0..6 ⇒ valem o tipo e o `decimalPlaces` da coluna.
+   */
+  decimalPlacesField?: string;
   /**
    * Coluna do NÚMERO DE ORDEM do item: a célula mostra a POSIÇÃO da linha (índice + 1), sempre
    * começando em 1, não um valor gravado. Só-leitura e independente do dado (CE-19).
