@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent } from 'react';
-import { ExternalLink, Loader2, X } from 'lucide-react';
+import { Download, ExternalLink, Loader2, X } from 'lucide-react';
 
 import { api } from '@core/lib/api';
 import { ZIndexManager } from '@core/lib/zIndexManager';
@@ -38,6 +38,9 @@ export function XJanelaDocumento({ titulo, endpoint, onClose }: XJanelaDocumento
   const [origem, setOrigem] = useState({ x: 0, y: 0 });
   const [quadro, setQuadro] = useState<QuadroDaJanela | null>(null);
   const [url, setUrl] = useState<string | null>(null);
+  // O nome que o BACK deu ao arquivo (Content-Disposition). O leitor de PDF do navegador salvaria o endereço
+  // interno do blob, um identificador sem sentido; o botão de baixar usa este.
+  const [nome, setNome] = useState('');
   const [falha, setFalha] = useState<string | null>(null);
 
   // O LIMITE é a ÁREA DO APP (`[data-app-area]`): a janela encosta à esquerda, à direita, no topo e na base
@@ -74,11 +77,12 @@ export function XJanelaDocumento({ titulo, endpoint, onClose }: XJanelaDocumento
     setFalha(null);
     void (async () => {
       try {
-        const { blob } = await api.downloadBlob(endpoint, {});
+        const { blob, filename } = await api.downloadBlob(endpoint, {});
         if (!vivo)
           return;
         criada = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
         setUrl(criada);
+        setNome(filename);
       } catch (erro) {
         if (vivo)
           setFalha(mensagemDeFalha(erro, `abrir o documento (${endpoint})`));
@@ -139,6 +143,21 @@ export function XJanelaDocumento({ titulo, endpoint, onClose }: XJanelaDocumento
       >
         <h2 className="text-ui font-semibold text-brand-text-primary whitespace-nowrap">{titulo}</h2>
         <div className="flex items-center gap-1 shrink-0">
+          {/* BAIXAR com o nome que o back deu ao arquivo: o `download` do link é o que faz o navegador gravar
+              "Custo Compra … NF 425.pdf" em vez do identificador do blob. Sem nome declarado pelo back
+              ("export", o padrão do cliente), o botão não aparece — salvaria um nome que não diz nada. */}
+          {url && nome && nome !== 'export' && (
+            <a
+              href={url}
+              download={nome}
+              title={`Baixar ${nome}`}
+              aria-label={`Baixar ${nome}`}
+              data-testid="janela-documento-baixar"
+              className="p-1.5 rounded-md text-brand-text-secondary hover:bg-hover"
+            >
+              <Download className="w-4 h-4" />
+            </a>
+          )}
           {url && (
             <a
               href={url}

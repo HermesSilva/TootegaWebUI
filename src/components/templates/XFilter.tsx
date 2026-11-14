@@ -188,6 +188,7 @@ export function XFilter({
           <div
             key={editor.id}
             className="min-w-[140px] sm:min-w-[180px] max-w-[240px]"
+            data-testid={`filter-${editor.name}`}
           >
             <XEditor
               editor={editor}
@@ -232,6 +233,7 @@ export function XFilter({
                 key={editor.id}
                 className={filter.layout === 1 ? 'w-full sm:min-w-[200px] sm:flex-1 sm:max-w-xs' : ''}
                 style={estiloDoEditor(filter.layout, editor.colSpan, editor.rowSpan)}
+                data-testid={`filter-${editor.name}`}
               >
                 <XEditor
                   editor={editor}

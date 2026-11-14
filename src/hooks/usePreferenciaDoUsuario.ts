@@ -72,7 +72,17 @@ export function usePreferenciaDoUsuario<T>(pChave: string, pPadrao: T): [T, (pVa
     return () => abortar.abort();
   }, [pChave, autenticado]);
 
-  useEffect(() => () => { if (temporizador.current) clearTimeout(temporizador.current); }, []);
+  // A gravação que ainda espera o usuário parar de mexer. Ao DESMONTAR ela é enviada na hora, e não
+  // descartada (2026-11-13): um diálogo que fecha logo depois do gesto (o seletor de itens) perdia o PUT, e
+  // na abertura seguinte o valor antigo do servidor sobrescrevia o novo, que só o navegador tinha.
+  const pendente = useRef<(() => void) | null>(null);
+  useEffect(() => () => {
+    if (temporizador.current) {
+      clearTimeout(temporizador.current);
+      temporizador.current = null;
+      pendente.current?.();
+    }
+  }, []);
 
   const gravar = useCallback((pValor: T) => {
     setValor(pValor);
@@ -81,10 +91,15 @@ export function usePreferenciaDoUsuario<T>(pChave: string, pPadrao: T): [T, (pVa
       return;
     if (temporizador.current)
       clearTimeout(temporizador.current);
-    temporizador.current = setTimeout(() => {
-      temporizador.current = null;
+    const enviar = (): void => {
+      pendente.current = null;
       api.put<unknown, T>(`${ROTA}/${encodeURIComponent(pChave)}`, pValor)
         .catch((pErro) => console.warn(`Preferência "${pChave}": ${mensagemDeFalha(pErro, 'gravar a preferência no perfil')}`));
+    };
+    pendente.current = enviar;
+    temporizador.current = setTimeout(() => {
+      temporizador.current = null;
+      enviar();
     }, ATRASO_DA_GRAVACAO_MS);
   }, [pChave, autenticado]);
 

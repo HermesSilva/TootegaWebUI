@@ -19,15 +19,17 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, FileText } from 'lucide-react';
+import { AlertTriangle, FileText, Loader2 } from 'lucide-react';
 
 import type { XRowAction, XDataEditor } from '@core/types';
 import { XButtonColor, XUIEditorType } from '@core/types';
 import { XEditor } from './editors/XEditor';
+import { api } from '@core/lib/api';
 import { XModalShell } from './XModalShell';
 import { XJanelaDocumento } from './XJanelaDocumento';
 import { CLOSE_BUTTON_STYLE, XBUTTON_PALETTE, resolverTokenDeFiltro, getFieldValue } from '@core/lib';
 import { useRecalculoAoDigitar } from '@core/hooks/useRecalculoAoDigitar';
+import { pendenciasDaGrade } from '@core/lib/celulasObrigatorias';
 
 interface XRowActionFormModalProps {
   action: XRowAction;
@@ -54,6 +56,11 @@ interface XRowActionFormModalProps {
    * mesmo sem o usuário tê-lo tocado — validação de formulário marca todos os campos (dono, 2026-10-12).
    */
   serverErrors?: Record<string, string>;
+  /**
+   * Quem abriu o modal é quem executa a confirmação (o `onSubmit`), e não o `endpoint` da ação: a escolha de produtos
+   * da importação confirma no endpoint da IMPORTAÇÃO. Sem isto, ação sem endpoint é modal só de leitura.
+   */
+  confirmaPorQuemAbriu?: boolean;
   isBusy?: boolean;
   onSubmit: (pValues: Record<string, unknown>) => void;
   onCancel: () => void;
@@ -77,6 +84,7 @@ export function XRowActionFormModal({
   rowData,
   initialValues,
   serverErrors,
+  confirmaPorQuemAbriu = false,
   isBusy = false,
   onSubmit,
   onCancel,
@@ -165,6 +173,14 @@ export function XRowActionFormModal({
         continue;
       }
 
+      // GRADE com célula obrigatória por linha (isRequired na coluna): a frase nomeia a coluna e as linhas que
+      // faltam. Vale desde a abertura — ver `gradePendente`.
+      const daGrade = pendenciasDaGrade(editor?.gridColumns, valor);
+      if (daGrade) {
+        encontrados[nome] = daGrade;
+        continue;
+      }
+
       if (typeof valor === 'string') {
         const texto = valor.trim();
 
@@ -183,9 +199,16 @@ export function XRowActionFormModal({
 
   const podeExecutar = Object.keys(erros).length === 0;
 
+  // Grade com célula obrigatória ainda vazia: o Confirmar fica DESABILITADO, e a frase aparece sob a grade sem
+  // esperar o clique (dono, 2026-11-09: a nota só se importa depois de escolhidos todos os produtos). Os demais
+  // erros seguem a regra de sempre — aparecem ao tocar ou ao confirmar.
+  const gradePendente = useMemo(
+    () => campos.some((pCampo) => pendenciasDaGrade(pCampo.editor?.gridColumns, valores[pCampo.fieldName]) !== null),
+    [campos, valores]);
+
   // Ação SEM endpoint não executa nada: o modal é só para LER (visualizar o registro da linha). Some o
   // "Confirmar" e o único gesto é fechar.
-  const somenteLeitura = !action.endpoint;
+  const somenteLeitura = !action.endpoint && !confirmaPorQuemAbriu;
 
   // `pBindings`: campos-IRMÃOS que a seleção deste editor preenche (fieldBindings do back). É o que leva
   // o SALDO da parcela escolhida para "Valor pago", e o que a conta única pré-selecionada aplica. Sem
@@ -238,10 +261,45 @@ export function XRowActionFormModal({
   // Janela do documento de apoio aberta (endpoint já resolvido e título), ou nenhuma.
   const [janela, setJanela] = useState<{ endpoint: string; titulo: string } | null>(null);
 
+  // DOCUMENTO DA AÇÃO (dono, 2026-11-10): o botão do rodapé BAIXA o arquivo, sem janela de visualização — o
+  // navegador salva (ou pergunta onde salvar) com o nome que o back montou. O pedido leva os valores que estão
+  // no formulário no clique, confirmados ou não: o documento sai com o que está na tela. A falha já sai no
+  // diálogo que o `api` emite; aqui só se desfaz o estado de "gerando".
+  const [gerandoDocumento, setGerandoDocumento] = useState(false);
+  const baixarDocumento = useCallback(async () => {
+    if (!action.documentEndpoint || gerandoDocumento)
+      return;
+
+    setGerandoDocumento(true);
+    try {
+      const { blob, filename } = await api.downloadBlob(resolverEndpoint(action.documentEndpoint), { ...valores });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // O `api` já mostrou o motivo no diálogo da área do App (aviso ou erro, com a operação e a causa).
+    } finally {
+      setGerandoDocumento(false);
+    }
+  }, [action.documentEndpoint, gerandoDocumento, resolverEndpoint, valores]);
+
   const temTextoLongo = campos.some((pCampo) => pCampo.editor?.editorType === XUIEditorType.TextArea);
   // Demonstrativo pede largura para rótulo, detalhe e valor caberem numa linha sem quebrar — o piso
   // grande (42rem) basta, e o dono o quis 25% mais estreito que o extragrande (2026-10-25).
   const temDemonstrativo = campos.some((pCampo) => pCampo.editor?.editorType === XUIEditorType.Statement);
+  // Lista de linhas (a grade dos itens nos custos da nota, dono 2026-11-08) pede a largura das colunas: o
+  // piso sobe para o extragrande, e o cartão continua crescendo com o conteúdo até o teto de 90% da área.
+  // A grade editável de itens (os itens da nota a importar, dono 2026-11-09) pede a mesma largura.
+  const temLista = campos.some((pCampo) =>
+    pCampo.editor?.customEditorName === 'XReadOnlyListEditor' || pCampo.editor?.customEditorName === 'XItemsGridEditor');
+  // Campo que ABSORVE A SOBRA vertical (`fillsHeight`, declarado no back): o formulário não rola, só ele (dono,
+  // 2026-11-08 — a grade dos itens nos custos da nota rola sem levar junto os valores, o cabeçalho e o rodapé).
+  // Ele sai da grade de 32 colunas e vai abaixo dela, ocupando a altura que sobrar.
+  const elastico = campos.find((pCampo) => pCampo.editor?.fillsHeight === true);
+  const camposDaGrade = elastico ? campos.filter((pCampo) => pCampo !== elastico) : campos;
 
   const titulo = action.formTitle || (action.title ?? '');
   const aviso = action.warningMessage ? (action.warningMessage ?? '') : '';
@@ -261,6 +319,66 @@ export function XRowActionFormModal({
       setAreaDoApp((ancora.current?.closest('[data-app-tab]') ?? ancora.current?.closest('[data-app-area]') ?? null) as HTMLElement | null);
   }, [action.useAppArea]);
 
+  // Um campo do modal: na grade de 32 colunas (o padrão) ou, o elástico, ocupando a altura que sobra.
+  const renderizarCampo = (pCampo: XDataEditor, pElastico: boolean): JSX.Element => {
+    const nome = pCampo.fieldName;
+    // O erro LOCAL (regra declarada no editor) vale depois de tocado; o do SERVIDOR vale até o
+    // usuário mexer naquele campo — é a marca que diz onde a recusa aconteceu.
+    const pendenteNaGrade = pendenciasDaGrade(pCampo.editor?.gridColumns, valores[nome]);
+    const erro = (tocados[nome] || pendenteNaGrade ? erros[nome] : undefined)
+      ?? (corrigidosDesdeServidor[nome] ? undefined : erroDoServidor(nome));
+
+    // Sem rótulo aqui: o editor já desenha o dele (XEditorLabel), com o asterisco do obrigatório.
+    // displayValue = o texto de um lookup preenchido por LIGAÇÃO (a conta que veio do boleto):
+    // sem ele, o combo mostraria a chave crua em vez do nome da conta.
+    const textoExibicao = pCampo.editor?.displayValueField
+      ? valores[pCampo.editor.displayValueField]
+      : undefined;
+    // Invólucro só para o testid, com a MESMA chave do formulário (`field-<binding>`): assim o
+    // teste e2e alcança um campo do mesmo jeito, sem saber se está num formulário ou numa ação
+    // de linha. Div comum, e NÃO `display:contents`: o pai espaça os filhos com `space-y-3`, que
+    // é margem entre IRMÃOS — sob `contents` o filho deixa de ser irmão e o espaçamento sumiria.
+    // DOCUMENTO DE APOIO declarado no campo (o DANFE da nota ao escrever a carta de correção): botão à
+    // direita, na altura do rótulo. Abre a janela flutuante; não mexe no valor do campo.
+    const documento = pCampo.editor?.documentEndpoint
+      ? {
+          endpoint: resolverEndpoint(pCampo.editor.documentEndpoint),
+          botao: pCampo.editor.documentButtonTitle || 'Ver documento',
+          titulo: pCampo.editor.documentWindowTitle || pCampo.editor.documentButtonTitle || 'Documento',
+        }
+      : null;
+
+    return (
+      <div
+        key={pCampo.id ?? nome}
+        data-testid={`field-${nome}`}
+        className={`${documento ? 'relative' : ''} ${pElastico ? 'flex-1 min-h-0 flex flex-col' : ''}`.trim() || undefined}
+        style={pElastico ? undefined : { gridColumn: `span ${pCampo.colSpan > 1 ? Math.min(pCampo.colSpan, 32) : 32}` }}
+      >
+        {documento && (
+          <button
+            type="button"
+            onClick={() => setJanela({ endpoint: documento.endpoint, titulo: documento.titulo })}
+            className={`absolute right-0 -top-0.5 z-10 inline-flex items-center gap-1.5 px-2.5 py-1 text-ui-xs
+                        font-medium rounded-md transition-colors ${XBUTTON_PALETTE[XButtonColor.Document]}`}
+            data-testid={`documento-${nome}`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            {documento.botao}
+          </button>
+        )}
+        <XEditor
+          editor={pCampo}
+          value={valores[nome]}
+          displayValue={textoExibicao}
+          onChange={(pValor, pBindings) => alterar(pCampo, pValor, pBindings)}
+          error={erro}
+          disabled={isBusy}
+        />
+      </div>
+    );
+  };
+
   const dialogo = (
     <>
     <XModalShell
@@ -269,12 +387,31 @@ export function XRowActionFormModal({
       // Texto longo (área de texto) pede leitura confortável: o piso sobe para o tamanho grande. Ações
       // de campos curtos (motivo, valor, data) seguem no pequeno — um modal largo para dois campos
       // estreitos só espalha o olhar.
-      size={temDemonstrativo || temTextoLongo ? 'lg' : 'sm'}
+      size={temLista ? 'xl' : temDemonstrativo || temTextoLongo ? 'lg' : 'sm'}
+      rolarConteudo={!elastico}
       title={titulo}
       closeLabel={'Fechar'}
       onClose={onCancel}
       footer={
         <>
+          {/* DOCUMENTO DA AÇÃO (dono, 2026-11-10): o botão que gera o documento fica no rodapé, com os demais,
+              e à ESQUERDA deles (`mr-auto`): não é desfecho do diálogo — não fecha nem confirma —, e separado
+              não se confunde com Confirmar. Baixa o arquivo direto, sem janela de visualização. */}
+          {action.documentEndpoint && (
+            <button
+              type="button"
+              onClick={() => { void baixarDocumento(); }}
+              disabled={isBusy || gerandoDocumento}
+              aria-busy={gerandoDocumento}
+              data-testid="rowaction-documento"
+              className={`mr-auto inline-flex items-center gap-2 px-4 py-3 sm:py-2 text-ui font-medium rounded-lg
+                          transition-colors min-h-touch sm:min-h-[36px] disabled:opacity-50 disabled:cursor-not-allowed
+                          ${XBUTTON_PALETTE[XButtonColor.Document]}`}
+            >
+              {gerandoDocumento ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+              {action.documentButtonTitle || 'Baixar documento'}
+            </button>
+          )}
           {/* "Fechar", não "Cancelar": num diálogo cujo objeto É cancelar a nota, um botão escrito
               "Cancelar" para DESISTIR diria o contrário do que faz. O mesmo rótulo de dispensa dos
               demais formulários da casa. */}
@@ -294,7 +431,7 @@ export function XRowActionFormModal({
           <button
             type="button"
             onClick={submeter}
-            disabled={isBusy}
+            disabled={isBusy || gradePendente}
             // Distinto do `form-save` do formulário: aqui o que se confirma é uma AÇÃO sobre um
             // registro (lançar custo, cancelar nota), não a gravação de um formulário.
             data-testid="rowaction-confirm"
@@ -303,84 +440,48 @@ export function XRowActionFormModal({
                        disabled:opacity-50 disabled:cursor-not-allowed
                        focus:outline-none focus:ring-2 focus:ring-brand-primary/40 ${classeBotao}`}
           >
-            {'Confirmar'}
+            {action.confirmTitle || 'Confirmar'}
           </button>
           )}
         </>
       }
     >
-      <div className="px-4 sm:px-5 py-4 space-y-3">
+      <div className={`relative px-4 sm:px-5 py-4 space-y-3 ${elastico ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
+        {/* OCUPADO (dono, 2026-11-09): enquanto a confirmação corre no servidor — a importação da nota com os
+            produtos escolhidos, o cancelamento na SEFAZ —, um spinner cobre o corpo do diálogo. Os campos já ficam
+            travados pelo `isBusy`; a camada diz POR QUE nada responde, em vez de parecer que a tela travou. */}
+        {isBusy && (
+          <div
+            role="status"
+            aria-live="polite"
+            data-testid="rowaction-ocupado"
+            className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-brand-surface/70"
+          >
+            <Loader2 className="w-8 h-8 animate-spin text-brand-primary" />
+            <span className="text-ui-sm font-medium text-brand-text-primary">{'Processando…'}</span>
+          </div>
+        )}
         {/* Os campos numa grade de 32 colunas, como o painel de edição da grade: o campo que declara
             colSpan divide a linha com os vizinhos; o que não declara (colSpan 1, o padrão) ocupa a
             linha inteira, como sempre ocupou aqui. */}
         {/* O aviso que o usuário não pode deixar de ler — o back diz se existe, e qual é. Discreto no
             tamanho, firme na cor: é uma faixa, não um bloco de texto. */}
         {aviso && (
-          <div className="flex items-start gap-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5">
+          <div className="flex items-start gap-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5 shrink-0">
             <AlertTriangle className="w-4 h-4 text-danger shrink-0 mt-0.5" />
             <p className="text-ui-sm text-brand-text-primary leading-snug">{aviso}</p>
           </div>
         )}
 
-        <div className="grid gap-x-3 gap-y-3" style={{ gridTemplateColumns: 'repeat(32, minmax(0, 1fr))' }}>
-        {campos.map((pCampo) => {
-          const nome = pCampo.fieldName;
-          // O erro LOCAL (regra declarada no editor) vale depois de tocado; o do SERVIDOR vale até o
-          // usuário mexer naquele campo — é a marca que diz onde a recusa aconteceu.
-          const erro = (tocados[nome] ? erros[nome] : undefined)
-            ?? (corrigidosDesdeServidor[nome] ? undefined : erroDoServidor(nome));
-
-          // Sem rótulo aqui: o editor já desenha o dele (XEditorLabel), com o asterisco do obrigatório.
-          // displayValue = o texto de um lookup preenchido por LIGAÇÃO (a conta que veio do boleto):
-          // sem ele, o combo mostraria a chave crua em vez do nome da conta.
-          const textoExibicao = pCampo.editor?.displayValueField
-            ? valores[pCampo.editor.displayValueField]
-            : undefined;
-          // Invólucro só para o testid, com a MESMA chave do formulário (`field-<binding>`): assim o
-          // teste e2e alcança um campo do mesmo jeito, sem saber se está num formulário ou numa ação
-          // de linha. Div comum, e NÃO `display:contents`: o pai espaça os filhos com `space-y-3`, que
-          // é margem entre IRMÃOS — sob `contents` o filho deixa de ser irmão e o espaçamento sumiria.
-          // DOCUMENTO DE APOIO declarado no campo (o DANFE da nota ao escrever a carta de correção): botão à
-          // direita, na altura do rótulo. Abre a janela flutuante; não mexe no valor do campo.
-          const documento = pCampo.editor?.documentEndpoint
-            ? {
-                endpoint: resolverEndpoint(pCampo.editor.documentEndpoint),
-                botao: pCampo.editor.documentButtonTitle || 'Ver documento',
-                titulo: pCampo.editor.documentWindowTitle || pCampo.editor.documentButtonTitle || 'Documento',
-              }
-            : null;
-
-          return (
-            <div
-              key={pCampo.id ?? nome}
-              data-testid={`field-${nome}`}
-              className={documento ? 'relative' : undefined}
-              style={{ gridColumn: `span ${pCampo.colSpan > 1 ? Math.min(pCampo.colSpan, 32) : 32}` }}
-            >
-              {documento && (
-                <button
-                  type="button"
-                  onClick={() => setJanela({ endpoint: documento.endpoint, titulo: documento.titulo })}
-                  className={`absolute right-0 -top-0.5 z-10 inline-flex items-center gap-1.5 px-2.5 py-1 text-ui-xs
-                              font-medium rounded-md transition-colors ${XBUTTON_PALETTE[XButtonColor.Document]}`}
-                  data-testid={`documento-${nome}`}
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  {documento.botao}
-                </button>
-              )}
-              <XEditor
-                editor={pCampo}
-                value={valores[nome]}
-                displayValue={textoExibicao}
-                onChange={(pValor, pBindings) => alterar(pCampo, pValor, pBindings)}
-                error={erro}
-                disabled={isBusy}
-              />
-            </div>
-          );
-        })}
+        <div className="grid gap-x-3 gap-y-3 shrink-0" style={{ gridTemplateColumns: 'repeat(32, minmax(0, 1fr))' }}>
+        {camposDaGrade.map((pCampo) => renderizarCampo(pCampo, false))}
         </div>
+
+        {elastico && (
+          <div className="flex-1 min-h-0 flex flex-col">
+            {renderizarCampo(elastico, true)}
+          </div>
+        )}
       </div>
     </XModalShell>
 

@@ -1,7 +1,7 @@
 name: CI
 
 # Integração contínua do Tootega WebUI — o motor do front (@Tootega/core), repositório próprio desde
-# 2026-10-30 (D56). Um job só: instala, TIPA e roda os testes PUROS do motor, sozinho.
+# 2026-10-30 (D56). Um job instala, TIPA e roda os testes PUROS do motor, sozinho; o outro limpa o histórico de execuções.
 #
 # O QUE ESTE CI PROVA, E O QUE NÃO PROVA. Ele tipa o motor SEM SaaS nenhum ao lado — é a prova de que nada aqui
 # depende de um App. Os testes daqui (src/__tests__) são os que NÃO renderizam React: parser, serializador e
@@ -26,10 +26,18 @@ on:
 jobs:
   typecheck:
     name: Typecheck + testes puros
-    runs-on: self-hosted
+    # Runner hospedado pelo GitHub (dono, 2026-11-02): o self-hosted era da organização Tootega e deixou de atender quando
+    # o repositório passou para HermesSilva. Repositório público não paga minutos e não deve rodar em máquina própria.
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
 
       - name: Verify Node.js installation
         shell: bash
@@ -52,3 +60,27 @@ jobs:
 
       - name: Testes puros do motor
         run: npm test
+
+  # O histórico de execuções guarda só as 2 últimas (dono, 2026-11-02). Em andamento ou na fila não se apaga: fica para a
+  # próxima limpeza. PR de fork recebe token só de leitura, por isso fica de fora.
+  limpar-historico:
+    name: Limpar historico de execucoes
+    needs: typecheck
+    if: ${{ always() && github.event.pull_request.head.repo.fork != true }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Apagar as execucoes antigas, mantendo as 2 ultimas
+        shell: bash
+        run: |
+          gh api --paginate "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?per_page=100" \
+            --jq '.workflow_runs[] | "\(.id) \(.status)"' > execucoes.txt
+          tail -n +3 execucoes.txt | while read -r id status; do
+            [ "$status" = "completed" ] || continue
+            # Duas limpezas simultâneas disputam as mesmas execuções: falhar ao apagar avisa, mas não reprova o CI.
+            gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$id" \
+              || echo "::warning::Nao consegui apagar a execucao $id"
+          done

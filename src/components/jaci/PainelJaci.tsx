@@ -311,7 +311,12 @@ export function PainelJaci({ anonimo = false, variante = 'cabecalho', testId = '
   // ABRIR DE FORA passa pelo MESMO posicionamento do botão (2026-10-22): só marcar `aberto` deixava o
   // painel sem âncora — sem posição nem camada —, e ele abria escondido atrás da página. Foi o "não
   // acontece nada" do "Pergunte à Jaci agora" da landing.
-  const abrirPainel = useCallback(() => {
+  // O evento pode trazer `detail.pergunta` (dono, 2026-11-09): o painel de ajuda da tela abre a Jaci já com o
+  // começo da pergunta escrito ("Sobre a tela Produtos: "), e a pessoa só completa.
+  const abrirPainel = useCallback((pEvento?: Event) => {
+    const detalhe = (pEvento as CustomEvent<{ pergunta?: string }> | undefined)?.detail;
+    if (detalhe && typeof detalhe.pergunta === 'string' && detalhe.pergunta.length > 0)
+      setPergunta(detalhe.pergunta);
     setAberto((pAtual) => {
       if (!pAtual)
         posicionarPainel();

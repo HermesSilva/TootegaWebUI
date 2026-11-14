@@ -8,6 +8,12 @@
  * sobrescrevê-los mudaria o valor sob os dedos. Sem gatilho declarado, todo campo editável é gatilho, e
  * só os de leitura recebem a resposta. Resposta de versão superada é descartada.
  *
+ * GATILHO QUE É LISTA RECEBE A RESPOSTA (dono, 2026-11-10). Numa lista com célula editável (`gridColumns`), só
+ * a célula digitada é do usuário; as demais colunas e o rodapé são calculados pelo back. A lista vai inteira no
+ * corpo, com as colunas digitadas marcadas em cada linha, e o back a devolve inteira com o que foi digitado
+ * intacto — por isso a resposta a substitui. Não muda o valor sob os dedos: nova digitação abre outra versão, e a
+ * resposta da anterior é descartada.
+ *
  * A falha já sai pelo diálogo global (api); o campo recalculado fica com o último valor.
  */
 
@@ -18,7 +24,12 @@ import { getFieldValue } from '@core/lib';
 
 interface CampoRecalculavel {
   fieldName: string;
-  editor?: { isReadOnly?: boolean } | null;
+  editor?: { isReadOnly?: boolean; gridColumns?: unknown[] | null } | null;
+}
+
+/** Lista (tem colunas): mesmo sendo gatilho, recebe a resposta — o back devolve o que foi digitado nela. */
+function ehLista(pCampo: CampoRecalculavel): boolean {
+  return (pCampo.editor?.gridColumns?.length ?? 0) > 0;
 }
 
 export interface OpcoesRecalculo {
@@ -74,7 +85,7 @@ export function useRecalculoAoDigitar({
           aplicar((pAnteriores) => {
             const novos = { ...pAnteriores };
             for (const campo of campos) {
-              if (ehGatilho(campo))
+              if (ehGatilho(campo) && !ehLista(campo))
                 continue;
               const valor = getFieldValue(resposta, campo.fieldName);
               if (valor !== undefined)

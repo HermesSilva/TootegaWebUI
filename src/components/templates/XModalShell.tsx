@@ -44,7 +44,7 @@ import { useState, type ReactNode, type JSX } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { ZIndexManager } from '@core/lib/zIndexManager';
-import { useMolduraDeModal } from '@core/hooks/useMolduraDeModal';
+import { useMolduraDeModal, type QuadroDeModal } from '@core/hooks/useMolduraDeModal';
 import { IconButton } from '../ui/IconButton';
 
 export type XModalShellSize = 'sm' | 'md' | 'lg' | 'xl';
@@ -77,6 +77,19 @@ export interface XModalShellProps {
    * grade, um documento de apoio) sem fechá-lo. Falso ⇒ fixo e centrado, como sempre.
    */
   draggable?: boolean;
+  /**
+   * O corpo ROLA (o padrão). Falso ⇒ o corpo não rola e passa a ser uma coluna flexível de altura limitada,
+   * para que um filho que absorve a sobra (a grade dos itens nos custos da nota, dono 2026-11-08) role sozinho,
+   * com o restante do formulário parado.
+   */
+  rolarConteudo?: boolean;
+  /**
+   * O quadro (posição e tamanho) que o usuário deixou neste diálogo, guardado por quem o abre (dono, 2026-11-13):
+   * aplicado na abertura, ajustado à área. Ausente ⇒ o diálogo nasce centrado, no tamanho do conteúdo.
+   */
+  quadroSalvo?: QuadroDeModal | null;
+  /** Chamado ao fim de cada arrasto ou redimensionar, com o quadro novo, para quem o abre guardá-lo. */
+  aoMudarQuadro?: (pQuadro: QuadroDeModal) => void;
   children: ReactNode;
 }
 
@@ -103,6 +116,9 @@ export function XModalShell({
   variant = 'inline',
   contentClassName = '',
   draggable = false,
+  rolarConteudo = true,
+  quadroSalvo,
+  aoMudarQuadro,
   children,
   ...rest
 }: XModalShellProps): JSX.Element {
@@ -112,7 +128,7 @@ export function XModalShell({
   // real e contido na área do App — tudo no `useMolduraDeModal`, a fonte única de todo cartão de diálogo.
   // `transition-none` no cartão: o `duration-200` do fade de entrada também define `transition-duration`,
   // e com a `transition-property` padrão do CSS (`all`) cada passo do gesto era ANIMADO em 200 ms.
-  const moldura = useMolduraDeModal({ arrastavel: draggable });
+  const moldura = useMolduraDeModal({ arrastavel: draggable, quadroSalvo, aoMudarQuadro });
 
   // ESC NÃO FECHA (dono, 2026-10-17): o diálogo aberto por um botão ou pela grade só sai pelo seu
   // botão de fechar/cancelar. O ouvinte global de teclado que havia aqui fechava também o diálogo
@@ -171,7 +187,10 @@ export function XModalShell({
           </div>
         )}
 
-        <div className={`flex-1 min-h-0 overflow-y-auto ${contentClassName}`} data-corpo-do-modal>
+        <div
+          className={`flex-1 min-h-0 ${rolarConteudo ? 'overflow-y-auto' : 'overflow-hidden flex flex-col'} ${contentClassName}`}
+          data-corpo-do-modal
+        >
           {children}
         </div>
 
