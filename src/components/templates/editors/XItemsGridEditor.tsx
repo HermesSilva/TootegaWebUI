@@ -61,6 +61,11 @@ const cellClass =
 const cellReadOnly =
   'w-full h-editor px-2 text-ui flex items-center ' +
   'text-brand-text-secondary truncate';
+// Só-leitura que QUEBRA LINHA (a coluna declara `wrapText`): a altura do editor vira o mínimo, e o texto longo
+// desce para a linha seguinte em vez de sumir nas reticências.
+const cellReadOnlyComQuebra =
+  'w-full min-h-editor px-2 py-1 text-ui flex items-center ' +
+  'text-brand-text-secondary whitespace-normal break-words';
 const cellClassOf = (pTravada: boolean): string => (pTravada ? cellReadOnly : cellClass);
 
 /** Tipos numéricos que a grade edita como moeda/decimal (mesmo comportamento do XCurrencyEditor). */
@@ -297,10 +302,23 @@ function XCepCell({
  * coluna copiando value/columns do item para os campos da linha (SYSxCidadeID, Cidade, UF, IBGE) — a
  * FK é sempre gravada, nunca texto solto. Contida na área do App (o diálogo é inline, §1 da skill front).
  */
+/**
+ * A rota da busca com os campos DA LINHA no lugar dos marcadores (`{Campo}`): a lupa de uma célula pode
+ * depender de outra célula da mesma linha — os registros a oferecer são os daquele outro. Leitura tolerante a
+ * caixa, como o resto do motor; marcador sem valor na linha fica vazio, e a rota responde o que não tem.
+ */
+export function rotaDaLinha(pRota: string, pLinha: Row): string {
+  return pRota.replace(/\{([A-Za-z0-9_]+)\}/g, (_pTudo, pCampo: string) => {
+    const valor = getFieldValue(pLinha, pCampo);
+    return valor === null || valor === undefined ? '' : encodeURIComponent(String(valor));
+  });
+}
+
 function XCidadePickerCell({
-  pColuna, pValor, pTravada, pClasse, pOnPreencher,
+  pColuna, pValor, pTravada, pClasse, pOnPreencher, pLinha,
 }: {
   pColuna: XUIGridColumn;
+  pLinha: Row;
   pValor: unknown;
   pTravada: boolean;
   pClasse: string;
@@ -368,7 +386,7 @@ function XCidadePickerCell({
       )}
       {aberto && (
         <XRecordPickerDialog
-          endpoint={pColuna.pickerEndpoint ?? ''}
+          endpoint={rotaDaLinha(pColuna.pickerEndpoint ?? '', pLinha)}
           title={pColuna.pickerTitle || 'Selecionar'}
           columns={pColuna.pickerColumns}
           ancora={celulaRef}
@@ -634,7 +652,12 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
    * e aí todas entram — o template não inventa identidade que o modelo não declarou.
    */
   const aoSelecionarVarios = (pItens: Record<string, unknown>[]): void => {
-    const campoChave = (editor.editor.fieldBindings ?? [])[0]?.targetField;
+    // O modelo pode declarar que o repetido é intenção (pickerAllowDuplicatesWhenField, verdadeiro no
+    // formulário): aí não há chave a conferir, e todo marcado entra — a mesma coisa em outra linha, com um
+    // atributo diferente em cada uma.
+    const campoChave = verdadeiroNoFormulario(editor.editor.pickerAllowDuplicatesWhenField)
+      ? undefined
+      : (editor.editor.fieldBindings ?? [])[0]?.targetField;
 
     const jaNaGrade = new Set(
       campoChave ? rows.map((pLinha) => String(getFieldValue(pLinha, campoChave) ?? '')) : []);
@@ -746,6 +769,7 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
       return (
         <XCidadePickerCell
           pColuna={pColuna}
+          pLinha={pLinha}
           pValor={valor}
           pTravada={celTravada}
           pClasse={pendente ? cellClassOf(celTravada).replace('border-border', 'border-danger') : cellClassOf(celTravada)}
@@ -833,7 +857,8 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
 
     // Texto (e demais). Travado ⇒ TEXTO, não `<input disabled>`: um input desabilitado continua
     // desenhando a caixa, que é justamente a moldura que a célula só-leitura não deve ter.
-    if (celTravada) return <div className={cellReadOnly}>{String(valor ?? '')}</div>;
+    if (celTravada)
+      return <div className={pColuna.wrapText === true ? cellReadOnlyComQuebra : cellReadOnly}>{String(valor ?? '')}</div>;
 
     return (
       <input
@@ -1049,7 +1074,8 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
                 <th
                   key={c.fieldName}
                   className="px-2 py-1.5 text-left font-medium text-brand-text-secondary whitespace-nowrap bg-muted-bg border-b border-border"
-                  style={{ width: larguraDaColuna(c) }}
+                  // O mínimo declarado (minWidth) segura a coluna do texto principal: sem espaço, a grade rola.
+                  style={{ width: larguraDaColuna(c), minWidth: typeof c.minWidth === 'number' && c.minWidth > 0 ? c.minWidth : undefined }}
                 >
                   {(c.title ?? '')}
                 </th>

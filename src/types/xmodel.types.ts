@@ -622,6 +622,11 @@ export interface XUIEditorModel extends XModel {
    */
   pickerMultiSelect?: boolean;
   /**
+   * Campo do formulário que, verdadeiro, deixa o seletor da grade incluir um registro que já está em outra
+   * linha. Vazio (o padrão): o repetido se ignora.
+   */
+  pickerAllowDuplicatesWhenField?: string;
+  /**
    * O que o picker leva do FORMULÁRIO como filtro fixo (dono, 2026-10-17): cada vínculo copia o valor
    * corrente do campo `sourceField` do formulário para a chave `targetField` de `filters`, em toda
    * busca do diálogo e nas opções dos critérios combinados. Campo vazio não vira filtro. Nasceu na
@@ -725,6 +730,10 @@ export interface XUIGridColumn {
    * linha. Vazio ⇒ não depende da linha. Soma-se às demais travas.
    */
   editableWhenRowField?: string;
+  /** A célula só-leitura de texto quebra linha em vez de cortar com reticências. */
+  wrapText?: boolean;
+  /** Largura mínima da coluna, em pixels; a grade rola de lado quando o espaço não comporta todas. */
+  minWidth?: number;
   /** A célula EDITÁVEL tem de estar preenchida: o modal de coleta marca a linha vazia e não confirma. */
   isRequired?: boolean;
   /**
@@ -1208,6 +1217,15 @@ export interface XApplication extends XModel {
   /** A importação recebe UM arquivo por vez: o seletor não deixa escolher vários. */
   importSingleFile?: boolean;
   /**
+   * Endpoint que ABRE um pacote `.zip` escolhido na importação: recebe o pacote (multipart, campo `arquivo`) e
+   * devolve `{ arquivos: [{ nome, conteudoBase64 }] }`; cada arquivo segue então ao `importEndpoint`, um por
+   * requisição. Vazio ⇒ o `.zip` é enviado como um arquivo qualquer.
+   */
+  importArchiveEndpoint?: string;
+  /** Extensões que o seletor de arquivos oferece (ex.: `.xml,.zip`). Vazio ⇒ qualquer arquivo. */
+  importAccept?: string;
+  /**
+   * Só se abre na importação de UM arquivo: com vários na fila, o arquivo que pede decisão é descartado e listado.
    * Formulário que resolve o que a importação não decide sozinha: a resposta traz `resolucaoPendente`, o motor abre
    * este modal de coleta com aqueles valores e, ao confirmar, reenvia o mesmo arquivo com o campo multipart
    * `resolucao` (JSON do que se preencheu). Nulo ⇒ a importação não pergunta nada.

@@ -1796,6 +1796,7 @@ export function XApplicationView({
             ref={seletorImportacao.ref}
             type="file"
             multiple={!application.importSingleFile}
+            accept={application.importAccept || undefined}
             className="hidden"
             onChange={seletorImportacao.aoMudar}
             data-testid="import-file-input"
@@ -1803,6 +1804,8 @@ export function XApplicationView({
           <XImportDialog
             isOpen={importFiles.length > 0}
             endpoint={application.importEndpoint}
+            archiveEndpoint={application.importArchiveEndpoint}
+            accept={application.importAccept}
             files={importFiles}
             resolution={application.importResolution}
             arquivoUnico={application.importSingleFile === true}
