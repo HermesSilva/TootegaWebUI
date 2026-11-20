@@ -44,6 +44,13 @@ export interface AppTab {
    * que abre sozinho quando o usuário entra (dono, 2026-10-25): sem entrada no menu, fechá-la seria perdê-la.
    */
   fixa?: boolean;
+  /**
+   * Ação da barra de botões que a App DISPARA ao abrir, ou de novo quando outro pedido chega (o `nonce` muda).
+   * É o comando de um botão `Custom` que a própria App declara: quem pede não inventa ação, só aperta, por
+   * quem está diante da tela, um botão que ela já tem. Serve a quem chega de fora com um propósito — o aviso de
+   * chamada de suporte que leva direto ao atendimento.
+   */
+  acaoPedida?: { comando: string; nonce: number };
 }
 
 /** Opções de abertura de uma aba. */
@@ -52,6 +59,8 @@ export interface OpcoesDeAba {
   fixa?: boolean;
   /** Abre sem tomar a frente de uma aba já ativa (padrão: a aba nova fica ativa). */
   emSegundoPlano?: boolean;
+  /** Comando de um botão `Custom` da App, disparado assim que ela abre (ver `AppTab.acaoPedida`). */
+  acao?: string;
 }
 
 export interface TabsContextValue {
@@ -72,6 +81,11 @@ export interface TabsContextValue {
   definirSubtitulo: (pTabId: string, pSubtitulo?: string) => void;
   /** Define (ou limpa, com vazio) o título que o conteúdo dá à aba, no lugar do da App. */
   definirTitulo: (pTabId: string, pTitulo?: string) => void;
+  /**
+   * Pede a uma aba JÁ ABERTA que dispare uma ação da barra de botões dela (ver `AppTab.acaoPedida`), e a traz
+   * para a frente. Para aba que ainda não existe, `openTab` com `OpcoesDeAba.acao`.
+   */
+  pedirAcao: (pTabId: string, pComando: string) => void;
   /**
    * Área de trabalho EXPANDIDA (dono, 2026-10-25): as abas sobem para o cabeçalho, entre a empresa e a Jaci, e o
    * nome do produto sai do cabeçalho — uma linha a menos sobre o conteúdo. Preferência do usuário, lembrada no
@@ -177,6 +191,7 @@ export function TabsProvider({ children }: TabsProviderProps): JSX.Element {
       filtroInicial: pFiltroInicial,
       registroInicial: pRegistroInicial,
       fixa: pOpcoes?.fixa || undefined,
+      acaoPedida: pOpcoes?.acao ? { comando: pOpcoes.acao, nonce: 1 } : undefined,
     };
 
     // A aba fixa entra depois das outras fixas e antes das comuns: as fixas ficam sempre à esquerda.
@@ -232,6 +247,13 @@ export function TabsProvider({ children }: TabsProviderProps): JSX.Element {
       : prev);
   }, []);
 
+  const pedirAcao = useCallback((pTabId: string, pComando: string) => {
+    setTabs((prev) => prev.map((t) => (t.id === pTabId
+      ? { ...t, acaoPedida: { comando: pComando, nonce: (t.acaoPedida?.nonce ?? 0) + 1 } }
+      : t)));
+    setActiveTabId(pTabId);
+  }, []);
+
   const value: TabsContextValue = {
     tabs,
     activeTabId,
@@ -243,6 +265,7 @@ export function TabsProvider({ children }: TabsProviderProps): JSX.Element {
     updateTabTitlesFromMenu,
     definirSubtitulo,
     definirTitulo,
+    pedirAcao,
     abasNoCabecalho,
     definirAbasNoCabecalho,
   };

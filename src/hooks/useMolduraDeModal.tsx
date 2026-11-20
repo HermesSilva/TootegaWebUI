@@ -66,6 +66,12 @@ export interface OpcoesMolduraDeModal {
    * abertura é um cartão novo no DOM, e o quadro guardado se reaplica nele. Padrão: sim.
    */
   aberto?: boolean;
+  /**
+   * O cartão se RECONTÉM na área sempre que muda de tamanho (ou a janela muda): o painel que, enrolado, foi
+   * arrastado para perto da borda e depois desenrola cresce para dentro, em vez de sair da tela (dono,
+   * 2026-11-19). Padrão: não — os diálogos comuns só se movem pela mão do usuário.
+   */
+  conterAoMudarDeTamanho?: boolean;
 }
 
 export interface MolduraDeModal {
@@ -115,6 +121,7 @@ export function useMolduraDeModal({
   quadroSalvo,
   aoMudarQuadro,
   aberto = true,
+  conterAoMudarDeTamanho = false,
 }: OpcoesMolduraDeModal = {}): MolduraDeModal {
   const refProprio = useRef<HTMLDivElement>(null);
   const ref = refExterno ?? refProprio;
@@ -189,6 +196,43 @@ export function useMolduraDeModal({
     deslocamento.current = { x, y };
     cartao.style.transform = `translate(${x}px, ${y}px)`;
   }, [quadroSalvo, ref, aberto]);
+
+  // Recontém o cartão na área: o que passou de uma borda volta para dentro (o lado de cima e o esquerdo mandam,
+  // quando ele é maior que a área). Medido do cartão como está, já com o deslocamento.
+  useEffect(() => {
+    const cartao = ref.current;
+    if (!conterAoMudarDeTamanho || !aberto || !cartao)
+      return;
+
+    const conter = (): void => {
+      if (gesto.current)
+        return;
+      const area = (cartao.closest('[data-app-area]') as HTMLElement | null) ?? cartao.parentElement;
+      if (!area)
+        return;
+      const a = area.getBoundingClientRect();
+      const c = cartao.getBoundingClientRect();
+      let dx = c.right > a.right ? a.right - c.right : 0;
+      let dy = c.bottom > a.bottom ? a.bottom - c.bottom : 0;
+      if (c.left + dx < a.left)
+        dx = a.left - c.left;
+      if (c.top + dy < a.top)
+        dy = a.top - c.top;
+      if (dx === 0 && dy === 0)
+        return;
+      deslocamento.current = { x: deslocamento.current.x + dx, y: deslocamento.current.y + dy };
+      cartao.style.transform = `translate(${deslocamento.current.x}px, ${deslocamento.current.y}px)`;
+    };
+
+    const observador = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(conter);
+    observador?.observe(cartao);
+    window.addEventListener('resize', conter);
+
+    return () => {
+      observador?.disconnect();
+      window.removeEventListener('resize', conter);
+    };
+  }, [conterAoMudarDeTamanho, aberto, ref]);
 
   const iniciar = useCallback((pModo: Gesto['modo']) => (pEvento: ReactPointerEvent<HTMLElement>) => {
     const cartao = ref.current;

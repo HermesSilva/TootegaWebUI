@@ -16,7 +16,7 @@
  * Gerencia o estado da aplicação incluindo modo, seleção, filtros e ordenação.
  */
 
-import { useState, useCallback, useMemo, useRef, useEffect, type JSX } from 'react';
+import { useState, useCallback, useContext, useMemo, useRef, useEffect, type JSX } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { CircleHelp, Search, X } from 'lucide-react';
 import { XPainelAjuda } from '@core/components/ajuda/XPainelAjuda';
@@ -36,6 +36,7 @@ import type {
 import { useApplicationData } from '@core/hooks';
 import { useAppX } from '@core/hooks/useAppX';
 import { useSeletorDeArquivo } from '@core/hooks/useSeletorDeArquivo';
+import { ErrorContext } from '@core/contexts/ErrorContext';
 import { api, ApiError } from '@core/lib/api';
 import { safeRandomUUID } from '@core/lib/uuid';
 import { baseDaApp } from '@core/lib/baseDaApp';
@@ -85,6 +86,11 @@ export interface XApplicationViewProps {
    * vez de terminar numa grade.
    */
   registroInicial?: string;
+  /**
+   * Ação da barra de botões que a tela dispara ao abrir, ou quando outro pedido chega (o `nonce` muda): o
+   * comando de um botão `Custom` que a App declara (ver `AppTab.acaoPedida`).
+   */
+  acaoPedida?: { comando: string; nonce: number };
 }
 
 // Stable id for the synthetic "Editar"/"Visualizar" buttons injected on row selection.
@@ -105,11 +111,14 @@ export function XApplicationView({
   onClose,
   filtroInicial,
   registroInicial,
+  acaoPedida,
 }: XApplicationViewProps): JSX.Element {
   // Cliente do React Query, para invalidar caches que uma AÇÃO DE LINHA torna obsoletos (ex.: o lookup
   // de parcelas em aberto, depois de baixar uma). Chamado ANTES dos early returns de template — os
   // hooks têm de rodar em toda renderização, na mesma ordem.
   const queryClient = useQueryClient();
+  // Opcional: a tela também é montada fora da casca (testes, pré-visualização), onde não há diálogo de mensagem.
+  const contextoDeErro = useContext(ErrorContext);
   // Dentro de um AppX, a ação que leva a um nível (o "Abrir" do repositório) navega por ele; fora, não existe.
   const appX = useAppX();
 
@@ -1086,6 +1095,37 @@ export function XApplicationView({
     registroInicial, application.canEdit, application.viewers, application.dataView.keyField,
     data, linhaSomenteLeitura, abrirViewer, openFormModal, loadFormData,
   ]);
+
+  /**
+   * A aba pode chegar com uma AÇÃO PEDIDA: aperta-se, por quem está na tela, o botão `Custom` da App com aquele
+   * comando. Só o botão que a App declara e que tem componente registrado: pedido de ação que a tela não tem
+   * vira aviso, dizendo qual comando faltou, em vez de não fazer nada calado. Cada pedido (`nonce`) é atendido
+   * uma vez: voltar à aba não repete a ação.
+   */
+  const acaoPedidaAtendida = useRef(0);
+
+  useEffect(() => {
+    if (!acaoPedida || acaoPedida.nonce === acaoPedidaAtendida.current)
+      return;
+
+    acaoPedidaAtendida.current = acaoPedida.nonce;
+
+    const declarada = application.buttonBar?.buttons?.some(
+      (pBotao) => pBotao.action === XButtonAction.Custom && pBotao.actionCommand === acaoPedida.comando);
+
+    if (declarada && XButtonActionRegistry.has(acaoPedida.comando)) {
+      dispararAcaoCustom(acaoPedida.comando);
+      return;
+    }
+
+    contextoDeErro?.showError({
+      category: 'warning',
+      title: 'Ação não disponível nesta tela',
+      message: `A tela "${application.title}" foi aberta para executar a ação "${acaoPedida.comando}", mas ela não tem `
+        + 'esse botão (ou o botão não tem quem o execute neste sistema). A tela foi aberta assim mesmo; use os botões '
+        + 'dela.',
+    });
+  }, [acaoPedida, application.buttonBar, application.title, dispararAcaoCustom, contextoDeErro]);
 
   // ---------------------------------------------------------------------------
   // Handlers - Pagination
