@@ -12,7 +12,10 @@
  *      aqui é só exibição). O diálogo fica aberto até o prazo vencer, a chamada ser atendida ou o usuário
  *      desistir. É nesta etapa que o usuário libera a tela e o microfone, num clique próprio: o navegador só
  *      mostra o seletor de compartilhamento logo depois de um gesto, e o atendimento pode chegar minutos
- *      depois;
+ *      depois. Com a EXTENSÃO de suporte do SaaS instalada (dono, 2026-11-19), a aba é capturada sem seletor e sem a
+ *      barra "Compartilhando esta aba": na primeira vez em cada aba, o usuário a libera pelo menu do botão direito,
+ *      pelo atalho ou pelo ícone da extensão (que o Chrome esconde até ser fixado), e a tela diz isso; sem a extensão, a tela oferece instalá-la e, como reserva, a
+ *      captura da janela, com o seletor;
  *   4. atendimento — o diálogo sai da frente e fica a JANELA DE CONTROLE: um cartão pequeno, arrastável, só de
  *      ícones (dono, 2026-11-19) — a situação da ligação, compartilhar/parar a tela, a câmera, o microfone e
  *      "Encerrar" —, com o texto de cada um no hint, para a aplicação continuar inteira à vista e em uso. Texto
@@ -25,15 +28,27 @@
  *      tem descrição, a tela pede uma (é o que o atendente lê antes de retornar). Depois de um atendimento,
  *      a pergunta: o caso foi resolvido?
  *
+ * <b>A chamada sobrevive ao F5</b> (dono, 2026-11-19): o servidor a mantém enquanto um dos dois estiver nela. Ao
+ * carregar, a tela pergunta se há chamada em aberto deste usuário e VOLTA a ela sozinha — sem senha, que é a mesma
+ * sessão no mesmo navegador —; em atendimento e com a extensão instalada, já pede o compartilhamento de novo (falta só
+ * o gesto de liberação da aba, que o navegador exige). E ninguém presume a presença do outro: o servidor conta a quem
+ * entra se a outra ponta já está na chamada, e o painel diz quando o atendente saiu.
+ *
+ * <b>O retorno do atendente toca e pergunta</b> (dono, 2026-11-19): quando um atendente retorna o chamado do quadro,
+ * o aviso chega pelo inbox em tempo real (pela referência `suporte:retorno:<chamada>`) e abre o `XRetornoDoSuporte`,
+ * com o toque repetido até o usuário atender, recusar ou dispensar, ou até o atendimento cair. Por isso a retomada só
+ * entra sozinha na chamada em que ESTA aba já tinha entrado (guardada no `sessionStorage`, que sobrevive ao F5):
+ * atendimento em que ela nunca entrou é retorno, e pergunta.
+ *
  * É diálogo DA CASCA (nasce do menu do perfil; App nenhum o aciona), o único tipo que usa overlay.
  *
  * O controle da aba é feito por eventos criados nesta página (`ReprodutorDeGestos`), com as travas de lá:
  * campo de senha não recebe digitação remota, e o gesto do próprio usuário tem prioridade.
  */
 
-import { useCallback, useEffect, useRef, useState, type FormEvent, type JSX } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type JSX } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle, GripVertical, Headset, Loader2, Mic, MicOff, MonitorUp, MousePointer2, PhoneOff, ScreenShareOff, Send, TriangleAlert } from 'lucide-react';
+import { CheckCircle, Download, GripVertical, Headset, Loader2, Mic, MicOff, MonitorUp, MousePointer2, PhoneOff, ScreenShareOff, Puzzle, Send, TriangleAlert } from 'lucide-react';
 import type { HubConnection } from '@microsoft/signalr';
 
 import { api } from '@core/lib/api';
@@ -42,17 +57,24 @@ import { XModalShell } from '@core/components/templates/XModalShell';
 import { useMolduraDeModal } from '@core/hooks/useMolduraDeModal';
 import { criarCanalDeSuporte, encerrarCanal, entrarNaChamada, sinalizar } from '@core/lib/suporte/canalDeSuporte';
 import { ConexaoDeMidia, pararMidia, pedirMicrofone, pedirTela, superficieCompartilhada } from '@core/lib/suporte/conexaoDeMidia';
+import {
+  CapturaPorExtensao, FalhaDaCaptura, navegadorAceitaExtensoes, textoDeLiberacao, verificarExtensao,
+} from '@core/lib/suporte/capturaPorExtensao';
 import type { SuperficieCompartilhada } from '@core/lib/suporte/controleRemoto';
-import { lerGesto, serializarGesto } from '@core/lib/suporte/controleRemoto';
+import { lerGesto, lerPedido, serializarGesto } from '@core/lib/suporte/controleRemoto';
 import { ehCampoDeEscrita, posicaoDoCursor } from '@core/lib/suporte/cursorVirtual';
 import { ATRIBUTO_DO_SUPORTE, ReprodutorDeGestos } from '@core/lib/suporte/reproducaoDeGesto';
 import {
-  ROTA_DAS_CHAMADAS, formatarEspera, formatarEstimativa, servidoresDoNavegador,
-  type ChamadaDeSuporte, type DisponibilidadeDoSuporte, type ServidorICE, type TipoDeRecado,
+  CHAVE_DA_SESSAO_DE_SUPORTE, REFERENCIA_DO_RETORNO, ROTA_DAS_CHAMADAS, formatarEspera, formatarEstimativa,
+  servidoresDoNavegador, type ChamadaDeSuporte, type DisponibilidadeDoSuporte, type ServidorICE, type TipoDeRecado,
 } from '@core/lib/suporte/tipos';
+import { ouvirMensagens } from '@core/lib/ouvintesDoInbox';
 
 import { XBotaoDeCamera } from './XBotaoDeCamera';
 import { XBotaoDeEnrolar } from './XBotaoDeEnrolar';
+import { XRetornoDoSuporte } from './XRetornoDoSuporte';
+import { useToqueDeChamada } from './useToqueDeChamada';
+import { CHAVE_DO_PAINEL_DO_USUARIO, usePosicaoDoPainel } from './usePosicaoDoPainel';
 import { XQuadrosDeCamera } from './XQuadrosDeCamera';
 import { useCameraDeSuporte } from './useCameraDeSuporte';
 
@@ -62,7 +84,7 @@ interface XChamarSuporteProps {
   aoFechar: () => void;
 }
 
-type Fase = 'inativo' | 'consultando' | 'indisponivel' | 'senha' | 'aguardando' | 'atendimento' | 'fim';
+type Fase = 'inativo' | 'consultando' | 'indisponivel' | 'extensao' | 'senha' | 'aguardando' | 'atendimento' | 'fim';
 
 /** De quanto em quanto tempo a situação é relida do servidor, para o caso de o aviso em tempo real não chegar. */
 const RELEITURA_MS = 15_000;
@@ -89,6 +111,38 @@ const BOTAO_DE_ICONE = 'inline-flex items-center justify-center w-9 h-9 rounded-
 const BOTAO_NEUTRO = 'px-4 py-2 text-ui font-medium text-brand-text-primary bg-brand-surface border border-border rounded-lg hover:bg-hover';
 const BOTAO_DESTAQUE = 'inline-flex items-center gap-2 px-4 py-2 text-ui font-semibold text-white bg-indigo-700 rounded-lg hover:bg-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed';
 
+/** A chamada em que esta aba entrou (sobrevive ao F5). Navegador que recusa o armazenamento: nenhuma. */
+function lerChamadaDaAba(): string | null {
+  try {
+    return window.sessionStorage.getItem(CHAVE_DA_SESSAO_DE_SUPORTE);
+  } catch {
+    return null;
+  }
+}
+
+function gravarChamadaDaAba(pID: string | null): void {
+  try {
+    if (pID)
+      window.sessionStorage.setItem(CHAVE_DA_SESSAO_DE_SUPORTE, pID);
+    else
+      window.sessionStorage.removeItem(CHAVE_DA_SESSAO_DE_SUPORTE);
+  } catch {
+    // Sem armazenamento, o F5 mostra o aviso de atender em vez de entrar sozinho: nada se perde.
+  }
+}
+
+/** De quanto em quanto tempo, no passo da instalação, a tela confere se a extensão já foi instalada. */
+const CONFERENCIA_DA_EXTENSAO_MS = 2000;
+
+/**
+ * Marca, no `sessionStorage`, que a página foi recarregada no meio da instalação da extensão: ao voltar, o diálogo se
+ * reabre sozinho. O navegador pode só expor a extensão nova à página depois de recarregá-la.
+ */
+const CHAVE_DE_REABRIR = 'tootega.suporte.reabrir';
+
+/** De quanto em quanto tempo o aviso de retorno confere se o atendimento ainda espera (o atendente pode desistir). */
+const CONFERENCIA_DO_RETORNO_MS = 5000;
+
 export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.Element | null {
   const [fase, setFase] = useState<Fase>('inativo');
   const [disponibilidade, setDisponibilidade] = useState<DisponibilidadeDoSuporte | null>(null);
@@ -100,6 +154,17 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
   const [telaPronta, setTelaPronta] = useState(false);
   const [pedindoTela, setPedindoTela] = useState(false);
   const [falhaDaTela, setFalhaDaTela] = useState('');
+  // A extensão espera o clique de liberação no ícone dela: o texto que diz ao usuário o que fazer.
+  const [liberacao, setLiberacao] = useState<string | null>(null);
+  // A extensão não está instalada, e o SaaS tem onde instalá-la: a tela oferece a instalação.
+  const [ofertaDeExtensao, setOfertaDeExtensao] = useState(false);
+  // O diálogo aberto por ele mesmo (a volta da recarga no meio da instalação), sem o menu do perfil.
+  const [abertoInterno, setAbertoInterno] = useState(false);
+  // A extensão acabou de ser instalada neste passo: o formulário da senha diz que deu certo.
+  const [extensaoInstalada, setExtensaoInstalada] = useState(false);
+  const [conferindoExtensao, setConferindoExtensao] = useState(false);
+  // O usuário escolheu seguir sem a extensão: o compartilhamento vai direto ao seletor, sem oferecer de novo.
+  const semExtensao = useRef(false);
   const [capturaServe, setCapturaServe] = useState(true);
   const [temMicrofone, setTemMicrofone] = useState(false);
   const [mudo, setMudo] = useState(false);
@@ -121,8 +186,14 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
   const reprodutor = useRef<ReprodutorDeGestos | null>(null);
   // O que foi compartilhado (aba, janela, tela inteira): é o que leva o ponto do vídeo ao ponto da página.
   const superficie = useRef<SuperficieCompartilhada | undefined>(undefined);
+  // A captura pela extensão de suporte (sem seletor), enquanto a extensão está conectada a esta aba.
+  const captura = useRef<CapturaPorExtensao | null>(null);
   const chamadaAtual = useRef<ChamadaDeSuporte | null>(null);
   const atendentePresente = useRef(false);
+  // Espelho de `atendentePresente` para a tela: o painel diz quando o atendente não está na chamada.
+  const [atendenteNaChamada, setAtendenteNaChamada] = useState(false);
+  // A disponibilidade de agora, para quem a lê fora do ciclo de render (a retomada logo depois de carregá-la).
+  const disponibilidadeAtual = useRef<DisponibilidadeDoSuporte | null>(null);
   const ofertando = useRef(false);
   const audio = useRef<HTMLAudioElement | null>(null);
   const ponteiro = useRef<HTMLDivElement | null>(null);
@@ -131,11 +202,32 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
   const camera = useCameraDeSuporte(() => midia.current);
 
   // A janela de controle se arrasta pelo cabeçalho, para sair de cima do que o usuário precisa ver.
+  // A posição em que o usuário deixou a janela fica no perfil: a próxima chamada a abre ali.
+  const [posicaoDaJanela, gravarPosicaoDaJanela] = usePosicaoDoPainel(CHAVE_DO_PAINEL_DO_USUARIO);
   const janela = useMolduraDeModal({
     arrastavel: true, redimensionavel: false, conterAoMudarDeTamanho: true, aberto: fase === 'atendimento',
+    quadroSalvo: posicaoDaJanela, aoMudarQuadro: gravarPosicaoDaJanela,
   });
   // Enrolada, a janela fica só na alça (situação e arrasto) e no botão de desenrolar.
   const [enrolada, setEnrolada] = useState(false);
+  // O atendente retornou o chamado do quadro e espera (dono, 2026-11-19): o aviso de atender, com toque repetido até
+  // atender, recusar, dispensar ou o atendimento cair.
+  const [retorno, setRetorno] = useState<ChamadaDeSuporte | null>(null);
+  const [respondendoRetorno, setRespondendoRetorno] = useState(false);
+  useToqueDeChamada(retorno !== null);
+  // O atendente pediu a janela recolhida e no topo da aba (ela aparece no vídeo dele): enrola, e depois de o tamanho
+  // novo estar na tela, encosta no topo. Contador, para dois pedidos seguidos valerem os dois.
+  const [pedidosDeTopo, setPedidosDeTopo] = useState(0);
+  const recolherAoTopo = useCallback(() => {
+    setEnrolada(true);
+    setPedidosDeTopo((pAtual) => pAtual + 1);
+  }, []);
+  const { encostarNoTopo } = janela;
+
+  useLayoutEffect(() => {
+    if (pedidosDeTopo > 0)
+      encostarNoTopo();
+  }, [pedidosDeTopo, encostarNoTopo]);
 
   const { desligar: desligarCamera, esquecerRemota } = camera;
 
@@ -155,11 +247,17 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
     reprodutor.current = null;
     pararMidia(tela.current);
     pararMidia(microfone.current);
+    captura.current?.fechar();
+    captura.current = null;
+    setLiberacao(null);
+    setOfertaDeExtensao(false);
     desligarCamera();
     tela.current = null;
     microfone.current = null;
     atendentePresente.current = false;
+    setAtendenteNaChamada(false);
     chamadaAtual.current = null;
+    gravarChamadaDaAba(null);
 
     void encerrarCanal(canal.current, id);
     canal.current = null;
@@ -217,6 +315,11 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
         aoReceberCamera: camera.aoReceberCamera,
         aoMudarCameraRemota: camera.aoMudarCameraRemota,
         aoReceberDados: (pTexto) => {
+          if (lerPedido(pTexto)) {
+            recolherAoTopo();
+            return;
+          }
+
           const gesto = lerGesto(pTexto);
           if (!gesto || !reprodutor.current)
             return;
@@ -247,6 +350,11 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
         }
       });
       reprodutor.current.definirSuperficie(superficie.current);
+      // O quadro que sai daqui, lido a cada gesto: é por ele que as tarjas da captura são descontadas.
+      reprodutor.current.definirQuadro(() => {
+        const ajustes = tela.current?.getVideoTracks()[0]?.getSettings();
+        return ajustes?.width && ajustes.height ? { largura: ajustes.width, altura: ajustes.height } : null;
+      });
 
       await conexao.ofertar();
     } catch {
@@ -302,36 +410,114 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
     setADescrever(null);
     setSenha('');
     setDescricao('');
-    setDisponibilidade(null);
+    guardarDisponibilidade(null);
+    setAbertoInterno(false);
+    setExtensaoInstalada(false);
     setFase('inativo');
     aoFechar();
   }, [aoFechar]);
 
   // O menu pediu a chamada: primeiro pergunta-se ao servidor o que é possível. Havendo chamada em curso, o
   // pedido não a derruba.
+  //
+  // Antes da senha, a extensão de suporte (dono, 2026-11-19): no navegador que a aceita, sem ela instalada, o diálogo
+  // conduz a instalação — é ela que mostra a aba ao atendente sem o seletor do navegador e sem a barra de
+  // compartilhamento. O usuário pode seguir sem ela.
   useEffect(() => {
-    if (!aberto || fase !== 'inativo')
+    if ((!aberto && !abertoInterno) || fase !== 'inativo')
       return;
 
     let vivo = true;
 
     setFase('consultando');
 
-    api.get<DisponibilidadeDoSuporte>(`${ROTA_DAS_CHAMADAS}/disponibilidade`)
-      .then((pDisponibilidade) => {
+    void (async () => {
+      try {
+        const pDisponibilidade = await api.get<DisponibilidadeDoSuporte>(`${ROTA_DAS_CHAMADAS}/disponibilidade`);
         if (!vivo)
           return;
 
-        setDisponibilidade(pDisponibilidade);
-        setFase(pDisponibilidade.disponivel ? 'senha' : 'indisponivel');
-      })
-      // A falha já saiu no diálogo de mensagem, com o motivo: não há o que mostrar aqui.
-      .catch(() => { if (vivo) fechar(); });
+        guardarDisponibilidade(pDisponibilidade);
+
+        if (!pDisponibilidade.disponivel) {
+          setFase('indisponivel');
+          return;
+        }
+
+        const precisaInstalar = !!pDisponibilidade.extensaoID && !semExtensao.current && navegadorAceitaExtensoes()
+          && !(await verificarExtensao(pDisponibilidade.extensaoID));
+
+        if (vivo)
+          setFase(precisaInstalar ? 'extensao' : 'senha');
+      } catch {
+        // A falha já saiu no diálogo de mensagem, com o motivo: não há o que mostrar aqui.
+        if (vivo)
+          fechar();
+      }
+    })();
 
     return () => { vivo = false; };
     // Só a abertura dispara a consulta: `fase` muda dentro do próprio efeito.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aberto]);
+  }, [aberto, abertoInterno]);
+
+  // A página foi recarregada no meio da instalação: o diálogo volta sozinho, e confere a extensão de novo.
+  useEffect(() => {
+    try {
+      if (window.sessionStorage.getItem(CHAVE_DE_REABRIR)) {
+        window.sessionStorage.removeItem(CHAVE_DE_REABRIR);
+        setAbertoInterno(true);
+      }
+    } catch {
+      // Sem armazenamento, o usuário reabre pelo menu do perfil.
+    }
+  }, []);
+
+  // No passo da instalação, a tela confere sozinha se a extensão já chegou: instalou na outra aba, voltou, e segue.
+  const extensaoID = disponibilidade?.extensaoID ?? '';
+
+  const conferirExtensao = useCallback(async (): Promise<boolean> => {
+    if (!extensaoID || !(await verificarExtensao(extensaoID)))
+      return false;
+
+    setExtensaoInstalada(true);
+    setFase((pAtual) => (pAtual === 'extensao' ? 'senha' : pAtual));
+
+    return true;
+  }, [extensaoID]);
+
+  useEffect(() => {
+    if (fase !== 'extensao')
+      return;
+
+    const conferencia = window.setInterval(() => void conferirExtensao(), CONFERENCIA_DA_EXTENSAO_MS);
+
+    return () => window.clearInterval(conferencia);
+  }, [fase, conferirExtensao]);
+
+  // "Já instalei": confere na hora; se a página ainda não enxerga a extensão, recarrega — o navegador pode só
+  // apresentá-la depois disso — e o diálogo se reabre sozinho.
+  async function jaInstalei(): Promise<void> {
+    setConferindoExtensao(true);
+    try {
+      if (await conferirExtensao())
+        return;
+
+      try {
+        window.sessionStorage.setItem(CHAVE_DE_REABRIR, '1');
+      } catch {
+        // Sem armazenamento, o usuário reabre pelo menu do perfil depois da recarga.
+      }
+      window.location.reload();
+    } finally {
+      setConferindoExtensao(false);
+    }
+  }
+
+  function seguirSemExtensao(): void {
+    semExtensao.current = true;
+    setFase('senha');
+  }
 
   // Contagem regressiva da espera. No zero, quem decide é o servidor: relê-se a chamada.
   useEffect(() => {
@@ -388,6 +574,170 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
   const minutosDeEspera = disponibilidade?.minutosDeEspera || MINUTOS_DE_ESPERA_PADRAO;
   const prazoEmPalavras = minutosDeEspera === 1 ? '1 minuto' : `${minutosDeEspera} minutos`;
 
+  function guardarDisponibilidade(pDisponibilidade: DisponibilidadeDoSuporte | null): void {
+    disponibilidadeAtual.current = pDisponibilidade;
+    setDisponibilidade(pDisponibilidade);
+  }
+
+  // Liga esta aba à chamada: o canal de tempo real, os ouvintes e a entrada na chamada. Serve à chamada recém-aberta e
+  // à retomada depois do F5. Falha ⇒ lança, e quem chamou desfaz.
+  async function entrarNaSessao(pChamada: ChamadaDeSuporte): Promise<void> {
+    const hub = criarCanalDeSuporte();
+
+    chamadaAtual.current = pChamada;
+    canal.current = hub;
+    gravarChamadaDaAba(pChamada.id);
+    // Entrou (pelo aviso, por "Chamar suporte" ou pela retomada): o aviso de retorno, se havia, perdeu o sentido.
+    setRetorno(null);
+
+    hub.on('ChamadaMudou', (pAtual: ChamadaDeSuporte) => aplicarSituacao(pAtual));
+    hub.on('ParticipanteEntrou', (pID: string) => {
+      if (pID !== chamadaAtual.current?.id)
+        return;
+
+      // O atendente está na chamada: entrou agora, voltou depois de recarregar, ou já estava quando esta aba entrou
+      // (o servidor conta). A ligação anterior, se havia, era com a aba antiga dele e não serve mais.
+      atendentePresente.current = true;
+      setAtendenteNaChamada(true);
+      desligarMidia();
+      void tentarOfertar();
+    });
+    hub.on('ParticipanteSaiu', (pID: string) => {
+      if (pID !== chamadaAtual.current?.id)
+        return;
+
+      // O atendente caiu, mas a chamada continua dele: se voltar, a ligação se refaz.
+      atendentePresente.current = false;
+      setAtendenteNaChamada(false);
+      desligarMidia();
+    });
+    hub.on('Recado', (pID: string, pTipo: TipoDeRecado, pDados: string) => {
+      if (pID === chamadaAtual.current?.id)
+        void midia.current?.receberRecado(pTipo, pDados).catch(() => desligarMidia());
+    });
+    // Reconectou: o hub esqueceu em que chamada esta conexão estava.
+    hub.onreconnected(() => {
+      const id = chamadaAtual.current?.id;
+      if (id)
+        void entrarNaChamada(hub, id).then(() => reler());
+    });
+
+    await hub.start();
+    await entrarNaChamada(hub, pChamada.id);
+
+    setChamada(pChamada);
+    setRestantes(pChamada.segundosRestantes);
+    setFase(pChamada.situacao === 'EmAtendimento' ? 'atendimento' : 'aguardando');
+  }
+
+  // Ao carregar a página: havendo chamada em aberto deste usuário (o F5 no meio da espera ou do atendimento), a tela
+  // volta a ela sozinha. Uma vez por carga; falha de rede aqui não incomoda ninguém (sem diálogo de mensagem).
+  const retomada = useRef(false);
+
+  useEffect(() => {
+    if (retomada.current)
+      return;
+    retomada.current = true;
+
+    void (async () => {
+      try {
+        const minha = await api.get<ChamadaDeSuporte | null>(`${ROTA_DAS_CHAMADAS}/minha`, undefined, true);
+        if (!minha?.id || !minha.emAberto || chamadaAtual.current)
+          return;
+
+        // Em atendimento numa chamada em que esta aba nunca entrou: é o retorno do atendente (o aviso chegou com o
+        // sistema fechado, ou noutra aba). Entrar sozinho seria mostrar a tela sem o usuário saber: toca e pergunta.
+        if (minha.situacao === 'EmAtendimento' && lerChamadaDaAba() !== minha.id) {
+          setRetorno(minha);
+          return;
+        }
+
+        const disponivel = await api.get<DisponibilidadeDoSuporte>(`${ROTA_DAS_CHAMADAS}/disponibilidade`, undefined, true);
+        guardarDisponibilidade(disponivel);
+        await entrarNaSessao(minha);
+
+        // Em atendimento, a tela volta a ser mostrada — pela extensão, que não precisa de gesto na página.
+        if (minha.situacao === 'EmAtendimento')
+          void compartilhar(false, true);
+      } catch {
+        limpar();
+      }
+    })();
+    // Uma vez por carga da página.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // O aviso de retorno chega pelo inbox, em tempo real: confere no servidor e, havendo atendimento à espera em que
+  // esta aba não está, abre o aviso de atender.
+  useEffect(() => ouvirMensagens((pMensagem) => {
+    if (!pMensagem.referencia?.startsWith(`${REFERENCIA_DO_RETORNO}:`) || chamadaAtual.current)
+      return;
+
+    void api.get<ChamadaDeSuporte | null>(`${ROTA_DAS_CHAMADAS}/minha`, undefined, true)
+      .then((pMinha) => {
+        if (pMinha?.id && pMinha.emAberto && pMinha.situacao === 'EmAtendimento' && !chamadaAtual.current)
+          setRetorno(pMinha);
+      })
+      .catch(() => { /* sem resposta, o aviso segue no sino */ });
+  }), []);
+
+  // Enquanto o aviso está na tela, o atendimento pode cair (o atendente encerrou, ou o servidor o deu por abandonado):
+  // o aviso sai e o toque para.
+  const idDoRetorno = retorno?.id;
+
+  useEffect(() => {
+    if (!idDoRetorno)
+      return;
+
+    const conferencia = window.setInterval(() => {
+      void api.get<ChamadaDeSuporte>(`${ROTA_DAS_CHAMADAS}/${idDoRetorno}`, undefined, true)
+        .then((pAtual) => {
+          if (!pAtual?.emAberto || pAtual.situacao !== 'EmAtendimento')
+            setRetorno((pRetorno) => (pRetorno?.id === idDoRetorno ? null : pRetorno));
+        })
+        .catch(() => { /* rede oscilou: confere de novo no próximo ciclo */ });
+    }, CONFERENCIA_DO_RETORNO_MS);
+
+    return () => window.clearInterval(conferencia);
+  }, [idDoRetorno]);
+
+  async function atenderRetorno(): Promise<void> {
+    const alvo = retorno;
+    if (!alvo || respondendoRetorno)
+      return;
+
+    setRespondendoRetorno(true);
+    try {
+      guardarDisponibilidade(await api.get<DisponibilidadeDoSuporte>(`${ROTA_DAS_CHAMADAS}/disponibilidade`));
+      await entrarNaSessao(alvo);
+      setRetorno(null);
+      // A tela vai sozinha pela extensão; sem ela, o painel oferece o botão de compartilhar.
+      void compartilhar(false, true);
+    } catch {
+      // O motivo já saiu no diálogo de mensagem (o atendimento pode ter acabado no meio do caminho).
+      limpar();
+      setRetorno(null);
+    } finally {
+      setRespondendoRetorno(false);
+    }
+  }
+
+  async function recusarRetorno(): Promise<void> {
+    const alvo = retorno;
+    if (!alvo || respondendoRetorno)
+      return;
+
+    setRespondendoRetorno(true);
+    try {
+      await api.post<ChamadaDeSuporte>(`${ROTA_DAS_CHAMADAS}/${alvo.id}/encerrar`);
+      setRetorno(null);
+    } catch {
+      // O motivo já saiu no diálogo de mensagem; o aviso continua para o usuário decidir de novo.
+    } finally {
+      setRespondendoRetorno(false);
+    }
+  }
+
   async function abrir(pEvento: FormEvent): Promise<void> {
     pEvento.preventDefault();
 
@@ -408,55 +758,7 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
         return;
       }
 
-      const hub = criarCanalDeSuporte();
-
-      chamadaAtual.current = nova;
-      canal.current = hub;
-
-      hub.on('ChamadaMudou', (pChamada: ChamadaDeSuporte) => aplicarSituacao(pChamada));
-      hub.on('ParticipanteEntrou', (pID: string) => {
-        if (pID !== chamadaAtual.current?.id)
-          return;
-
-        // O atendente entrou (ou voltou, depois de recarregar a página): a ligação anterior, se havia, era
-        // com a aba antiga dele e não serve mais.
-        atendentePresente.current = true;
-        desligarMidia();
-        void tentarOfertar();
-      });
-      hub.on('ParticipanteSaiu', (pID: string) => {
-        if (pID !== chamadaAtual.current?.id)
-          return;
-
-        // O atendente caiu, mas a chamada continua dele: se voltar, a ligação se refaz.
-        atendentePresente.current = false;
-        desligarMidia();
-      });
-      hub.on('Recado', (pID: string, pTipo: TipoDeRecado, pDados: string) => {
-        if (pID === chamadaAtual.current?.id)
-          void midia.current?.receberRecado(pTipo, pDados).catch(() => desligarMidia());
-      });
-      // Reconectou: o hub esqueceu em que chamada esta conexão estava.
-      hub.onreconnected(() => {
-        const id = chamadaAtual.current?.id;
-        if (id)
-          void entrarNaChamada(hub, id).then(() => reler());
-      });
-
-      await hub.start();
-      await entrarNaChamada(hub, nova.id);
-
-      setChamada(nova);
-      setRestantes(nova.segundosRestantes);
-
-      // Em atendimento logo de saída: é o retorno de um chamado do quadro. O atendente já espera na chamada,
-      // e entrou nela antes desta conexão existir — por isso conta como presente sem aviso de entrada.
-      if (nova.situacao === 'EmAtendimento') {
-        atendentePresente.current = true;
-        setFase('atendimento');
-      } else {
-        setFase('aguardando');
-      }
+      await entrarNaSessao(nova);
     } catch {
       // Senha recusada ou servidor fora: o motivo já saiu no diálogo de mensagem. Nada ficou aberto.
       limpar();
@@ -465,15 +767,48 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
     }
   }
 
-  async function compartilhar(): Promise<void> {
+  /**
+   * Compartilha a tela: pela EXTENSÃO de suporte, quando o SaaS tem uma e ela está instalada (sem seletor e sem a
+   * barra do navegador); senão, oferece instalá-la (quando há onde) ou cai na captura da janela, com o seletor.
+   *
+   * @param pSemExtensao O usuário escolheu compartilhar sem a extensão (a captura da janela).
+   * @param pAutomatico   Pedido sem gesto do usuário (a retomada depois do F5): só pela extensão — o seletor do
+   *                      navegador exige um clique na página, e sem ele nada se pede.
+   */
+  async function compartilhar(pSemExtensao = false, pAutomatico = false): Promise<void> {
     if (pedindoTela)
+      return;
+
+    const disponivel = disponibilidadeAtual.current;
+    if (pAutomatico && !(disponivel?.extensaoID && await verificarExtensao(disponivel.extensaoID)))
       return;
 
     setPedindoTela(true);
     setFalhaDaTela('');
+    setOfertaDeExtensao(false);
+
+    const idDaExtensao = pSemExtensao ? '' : (disponivel?.extensaoID ?? '');
+    let porExtensao = false;
 
     try {
-      const novaTela = await pedirTela();
+      let novaTela: MediaStream;
+      const extensao = idDaExtensao ? await verificarExtensao(idDaExtensao) : null;
+
+      if (extensao) {
+        porExtensao = true;
+        captura.current ??= new CapturaPorExtensao(idDaExtensao, {
+          aoPrecisarLiberar: () => setLiberacao(textoDeLiberacao(extensao)),
+        });
+        novaTela = await captura.current.pedir();
+      } else if (idDaExtensao && disponivel?.extensaoURL && !semExtensao.current) {
+        // Sem a extensão, e com onde instalá-la: a escolha é do usuário (instalar, ou seguir com o seletor).
+        setOfertaDeExtensao(true);
+        return;
+      } else {
+        novaTela = await pedirTela();
+      }
+
+      setLiberacao(null);
 
       // O usuário pode parar o compartilhamento pela barra do próprio navegador, a qualquer momento: é o
       // mesmo que parar pela janela de controle.
@@ -483,10 +818,11 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
       });
 
       tela.current = novaTela;
-      superficie.current = superficieCompartilhada(novaTela);
+      // Pela extensão, o vídeo é ESTA aba: o ponto do vídeo é o ponto da página, sem moldura a descontar.
+      superficie.current = porExtensao ? 'browser' : superficieCompartilhada(novaTela);
       reprodutor.current?.definirSuperficie(superficie.current);
-      // Aba é OUTRA aba (a deste sistema não é oferecida): o atendente a vê, mas os cliques cairiam aqui.
-      setCapturaServe(superficie.current !== 'browser');
+      // Aba pelo seletor é OUTRA aba (a deste sistema não é oferecida): o atendente a vê, mas os cliques cairiam aqui.
+      setCapturaServe(porExtensao || superficie.current !== 'browser');
       setTelaPronta(true);
 
       if (!microfone.current) {
@@ -500,17 +836,33 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
         await midia.current.definirTela(novaTela.getVideoTracks()[0] ?? null);
       else
         void tentarOfertar();
-    } catch {
-      setFalhaDaTela(
-        'A tela não foi compartilhada: o pedido foi recusado ou a janela de escolha foi fechada. '
-        + 'Sem a tela, o atendente não vê o que você vê. Clique de novo e escolha a janela deste navegador.');
+    } catch (pErro) {
+      setLiberacao(null);
+      setFalhaDaTela(pErro instanceof FalhaDaCaptura ? pErro.message
+        : porExtensao
+          ? 'A captura desta aba pela extensão de suporte não abriu: o navegador recusou o vídeo da aba. Clique de novo '
+            + 'em compartilhar; se repetir, use "Compartilhar sem a extensão".'
+          : 'A tela não foi compartilhada: o pedido foi recusado ou a janela de escolha foi fechada. '
+            + 'Sem a tela, o atendente não vê o que você vê. Clique de novo e escolha a janela deste navegador.');
     } finally {
       setPedindoTela(false);
     }
   }
 
+  // O usuário desistiu de liberar a aba pela extensão: o ícone apaga, e o pedido em curso termina.
+  function desistirDaLiberacao(): void {
+    captura.current?.desistir();
+    setLiberacao(null);
+  }
+
+  function instalarExtensao(): void {
+    if (disponibilidade?.extensaoURL)
+      window.open(disponibilidade.extensaoURL, '_blank', 'noopener');
+  }
+
   // Para de mostrar a tela sem derrubar a ligação: a voz e a câmera seguem, e o atendente é avisado.
   function soltarTela(): void {
+    captura.current?.avisarParou();
     pararMidia(tela.current);
     tela.current = null;
     setTelaPronta(false);
@@ -606,8 +958,14 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
     setMudo(novo);
   }
 
-  if (fase === 'inativo')
-    return null;
+  if (fase === 'inativo') {
+    return retorno && (
+      <XRetornoDoSuporte
+        chamada={retorno} ocupado={respondendoRetorno}
+        aoAtender={() => void atenderRetorno()} aoRecusar={() => void recusarRetorno()} aoDispensar={() => setRetorno(null)}
+      />
+    );
+  }
 
   if (fase === 'consultando') {
     return (
@@ -636,30 +994,103 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
     );
   }
 
+  if (fase === 'extensao') {
+    const temLoja = !!disponibilidade?.extensaoURL;
+
+    return (
+      <XModalShell variant="overlay" size="sm" title={'Chamar suporte'} closeLabel={'Cancelar'} onClose={fechar}>
+        <div className="w-full sm:w-[28rem] p-5 space-y-4 text-ui text-brand-text-primary" data-testid="suporte-extensao">
+          <div className="flex items-start gap-3">
+            <span className="inline-flex items-center justify-center w-9 h-9 shrink-0 rounded-full bg-indigo-600/15 text-indigo-500" aria-hidden="true">
+              <Puzzle className="w-5 h-5" />
+            </span>
+            <div className="space-y-1">
+              <p>
+                {'Antes, instale a '}<strong>{'extensão de suporte'}</strong>
+                {': com ela, o atendente vê esta aba sem você escolher o que compartilhar. É só uma vez.'}
+              </p>
+              <p className="text-ui-sm text-brand-text-secondary" role="status" aria-live="polite">
+                {'Esta tela percebe sozinha quando a extensão estiver instalada.'}
+              </p>
+            </div>
+          </div>
+
+          {temLoja ? (
+            <ol className="list-decimal pl-5 space-y-1 text-ui-sm" data-testid="suporte-extensao-passos">
+              <li>{'Clique em '}<strong>{'Instalar a extensão'}</strong>{': a loja do Chrome abre numa aba nova.'}</li>
+              <li>{'Lá, clique em '}<strong>{'Usar no Chrome'}</strong>{' e confirme em '}<strong>{'Adicionar extensão'}</strong>{'.'}</li>
+              <li>{'Volte a esta aba. Se ela não seguir sozinha, clique em '}<strong>{'Já instalei'}</strong>{'.'}</li>
+            </ol>
+          ) : (
+            <p className="flex items-start gap-2 text-ui-sm" data-testid="suporte-extensao-sem-loja">
+              <TriangleAlert className="w-4 h-4 mt-0.5 shrink-0 text-warning" aria-hidden="true" />
+              <span>
+                {'Neste ambiente a extensão ainda não está na loja do Chrome: quem a instala é a equipe que administra o '
+                  + 'sistema. Se ela já foi instalada, clique em '}<strong>{'Já instalei'}</strong>
+                {'; senão, siga sem ela — você escolhe a janela a compartilhar.'}
+              </span>
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+            <button type="button" onClick={seguirSemExtensao} data-testid="suporte-seguir-sem-extensao" className={`${BOTAO_NEUTRO} mr-auto`}>
+              {'Seguir sem ela'}
+            </button>
+            <button
+              type="button" onClick={() => void jaInstalei()} disabled={conferindoExtensao} data-testid="suporte-ja-instalei"
+              className={BOTAO_NEUTRO}
+            >
+              {'Já instalei'}
+            </button>
+            {temLoja && (
+              <button type="button" onClick={instalarExtensao} autoFocus data-testid="suporte-instalar-extensao-agora" className={BOTAO_DESTAQUE}>
+                <Download className="w-4 h-4" aria-hidden="true" /> {'Instalar a extensão'}
+              </button>
+            )}
+          </div>
+        </div>
+      </XModalShell>
+    );
+  }
+
   if (fase === 'senha') {
     return (
-      <XModalShell variant="overlay" size="md" title={'Chamar suporte'} closeLabel={'Cancelar'} onClose={fechar}>
-        <form onSubmit={abrir} className="p-5 space-y-4 text-ui text-brand-text-primary" data-testid="suporte-senha">
-          <p>
-            {'Um atendente vai '}<strong>{'ver a sua tela'}</strong>{', falar com você por áudio (e por vídeo, se vocês ligarem a câmera) e poderá '}
-            <strong>{'operar esta aba'}</strong>{'. Você encerra quando quiser.'}
-          </p>
-          <p className="text-ui-sm text-brand-text-secondary" data-testid="suporte-prazo">
-            {`A sua chamada espera na fila por até ${prazoEmPalavras}. Se nenhum atendente a assumir nesse tempo, ela fica `
-              + 'registrada no quadro do suporte, e um atendente retorna: você recebe um aviso no sino.'}
-          </p>
+      <XModalShell variant="overlay" size="sm" title={'Chamar suporte'} closeLabel={'Cancelar'} onClose={fechar}>
+        {/* Largura fixa e estreita (dono, 2026-11-19: "menor e mais elegante"): o texto quebra em vez de alargar o diálogo. */}
+        <form onSubmit={abrir} className="w-full sm:w-[28rem] p-5 space-y-4 text-ui text-brand-text-primary" data-testid="suporte-senha">
+          <div className="flex items-start gap-3">
+            <span className="inline-flex items-center justify-center w-9 h-9 shrink-0 rounded-full bg-indigo-600/15 text-indigo-500" aria-hidden="true">
+              <Headset className="w-5 h-5" />
+            </span>
+            <div className="space-y-1">
+              <p>
+                {'Um atendente vai '}<strong>{'ver a sua tela'}</strong>{', falar com você e poderá '}
+                <strong>{'operar esta aba'}</strong>{'. Você encerra quando quiser.'}
+              </p>
+              <p className="text-ui-sm text-brand-text-secondary" data-testid="suporte-prazo">
+                {`A chamada espera na fila por até ${prazoEmPalavras}; depois, vai ao quadro do suporte e um atendente `
+                  + 'retorna, com aviso no sino.'}
+              </p>
+            </div>
+          </div>
+          {extensaoInstalada && (
+            <p className="flex items-center gap-2 text-ui-sm" role="status" data-testid="suporte-extensao-instalada">
+              <CheckCircle className="w-4 h-4 shrink-0 text-success" aria-hidden="true" />
+              <span>{'Extensão de suporte instalada: o atendente verá esta aba sem você escolher o que compartilhar.'}</span>
+            </p>
+          )}
           {semAtendente && (
-            <div className="space-y-2" data-testid="suporte-sem-atendente">
-              <p className="flex items-start gap-2">
-                <TriangleAlert className="w-5 h-5 mt-0.5 shrink-0 text-warning" aria-hidden="true" />
+            <div className="space-y-2 p-3 rounded-lg border border-border-light" data-testid="suporte-sem-atendente">
+              <p className="flex items-start gap-2 text-ui-sm">
+                <TriangleAlert className="w-4 h-4 mt-0.5 shrink-0 text-warning" aria-hidden="true" />
                 <span>
                   <strong>{'Não há atendente online agora.'}</strong>
                   {` Você pode chamar assim mesmo: se um atendente entrar nos próximos ${prazoEmPalavras}, ele atende. `
-                    + 'Descreva o problema, para o atendente saber do que se trata se precisar retornar.'}
+                    + 'Descreva o problema, para ele saber do que se trata se precisar retornar.'}
                 </span>
               </p>
               {disponibilidade.horarios.length > 0 && (
-                <div className="text-ui-sm">
+                <div className="text-ui-sm pl-6">
                   <p className="font-medium">{'Horário de atendimento'}</p>
                   <ul className="text-brand-text-secondary">
                     {disponibilidade.horarios.map((pLinha) => <li key={pLinha}>{pLinha}</li>)}
@@ -670,40 +1101,39 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
           )}
 
           <div className="space-y-1">
-            <label htmlFor="suporte-descricao-campo" className="block font-medium">
-              {semAtendente ? 'Descreva o problema (recomendado)' : 'Descreva o problema (opcional)'}
+            <label htmlFor="suporte-descricao-campo" className="block text-ui-sm font-medium">
+              {semAtendente ? 'O problema (recomendado)' : 'O problema (opcional)'}
             </label>
-            <p className="text-ui-sm text-brand-text-secondary">
-              {'O que você estava fazendo e o que aconteceu. É o que o atendente lê antes de falar com você.'}
-            </p>
             <textarea
-              id="suporte-descricao-campo" value={descricao} rows={3} maxLength={TAMANHO_MAXIMO_DA_DESCRICAO}
-              autoFocus={semAtendente}
+              id="suporte-descricao-campo" value={descricao} rows={2} maxLength={TAMANHO_MAXIMO_DA_DESCRICAO}
+              autoFocus={semAtendente} placeholder={'O que você fazia e o que aconteceu'}
+              title={'É o que o atendente lê antes de falar com você.'}
               onChange={(pEvento) => setDescricao(pEvento.target.value)}
-              className="w-full px-2.5 py-2 text-ui border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary/20"
+              className="w-full px-2.5 py-2 text-ui border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand-primary/20"
             />
           </div>
 
           <div className="space-y-1">
-            <label htmlFor="suporte-senha-campo" className="block font-medium">{'Sua senha'}</label>
-            <p className="text-ui-sm text-brand-text-secondary">
-              {'A senha com que você entra no sistema. Ela é pedida de novo para confirmar que é você quem está chamando.'}
-            </p>
+            <label htmlFor="suporte-senha-campo" className="block text-ui-sm font-medium">{'Sua senha'}</label>
             <input
               id="suporte-senha-campo" type="password" value={senha} autoComplete="current-password" autoFocus={!semAtendente}
+              aria-describedby="suporte-senha-dica"
               onChange={(pEvento) => setSenha(pEvento.target.value)}
               className="w-full px-2.5 min-h-editor text-ui border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary/20"
             />
+            <p id="suporte-senha-dica" className="text-ui-xs text-brand-text-secondary">
+              {'A de entrar no sistema: confirma que é você quem chama.'}
+            </p>
           </div>
 
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end gap-2 pt-1">
             {!senha && (
-              <p className="mr-auto text-ui-sm text-brand-text-secondary">{'Para chamar, falta digitar a sua senha.'}</p>
+              <p className="mr-auto text-ui-xs text-brand-text-secondary">{'Para chamar, falta digitar a sua senha.'}</p>
             )}
             <button type="button" onClick={fechar} className={BOTAO_NEUTRO}>{'Cancelar'}</button>
             <button type="submit" disabled={!senha || abrindo} data-testid="suporte-chamar" className={BOTAO_DESTAQUE}>
-              {abrindo ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Headset className="w-4 h-4" aria-hidden="true" />}
-              {'Chamar suporte'}
+              {abrindo && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
+              {'Chamar'}
             </button>
           </div>
         </form>
@@ -761,9 +1191,43 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
     );
   }
 
-  // O que pede ação sobre a tela: aba errada, ou o pedido de compartilhar que falhou.
+  // O que pede ação sobre a tela: liberar a aba na extensão, instalar a extensão, aba errada, ou o pedido que falhou.
   const avisosDaTela = (
     <>
+      {liberacao && (
+        <div className="flex items-start gap-2 text-ui-sm" role="status" aria-live="polite" data-testid="suporte-liberar-extensao">
+          <Puzzle className="w-4 h-4 mt-0.5 shrink-0 text-indigo-700" aria-hidden="true" />
+          <span className="flex-1">{liberacao}</span>
+          <button type="button" onClick={desistirDaLiberacao} className="shrink-0 underline text-brand-text-secondary hover:text-brand-text-primary">
+            {'Cancelar'}
+          </button>
+        </div>
+      )}
+      {ofertaDeExtensao && (
+        <div className="space-y-2 text-ui-sm" data-testid="suporte-oferta-extensao">
+          <p className="flex items-start gap-2">
+            <Puzzle className="w-4 h-4 mt-0.5 shrink-0 text-indigo-700" aria-hidden="true" />
+            <span>
+              {'Com a '}<strong>{'extensão de suporte'}</strong>{' instalada, o atendente vê esta aba sem você precisar '
+                + 'escolher o que compartilhar. Instale (leva um minuto) e clique de novo em compartilhar.'}
+            </span>
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button" onClick={instalarExtensao} data-testid="suporte-instalar-extensao"
+              className="inline-flex items-center gap-2 px-3 py-1.5 font-semibold text-white bg-indigo-700 rounded-lg hover:bg-indigo-800"
+            >
+              <Download className="w-4 h-4" aria-hidden="true" /> {'Instalar a extensão'}
+            </button>
+            <button
+              type="button" onClick={() => void compartilhar(true)} data-testid="suporte-compartilhar-sem-extensao"
+              className="px-3 py-1.5 font-medium text-brand-text-primary bg-brand-surface border border-border rounded-lg hover:bg-hover"
+            >
+              {'Compartilhar sem a extensão'}
+            </button>
+          </div>
+        </div>
+      )}
       {telaPronta && !capturaServe && (
         <p className="flex items-start gap-2 text-ui-sm" data-testid="suporte-aba-errada">
           <TriangleAlert className="w-4 h-4 mt-0.5 shrink-0 text-warning" aria-hidden="true" />
@@ -854,7 +1318,10 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
 
   // Em atendimento: uma barra fixa embaixo, fora do caminho. A aplicação fica inteira à vista e em uso —
   // é ela que o atendente precisa ver. O ponteiro dele aparece por cima de tudo e não recebe clique.
-  const situacaoDaLigacao = !telaPronta
+  const situacaoDaLigacao = !atendenteNaChamada
+    ? 'O atendente não está na chamada agora (saiu da página ou perdeu a conexão). A chamada continua aberta e se refaz '
+      + 'sozinha quando ele voltar.'
+    : !telaPronta
     ? (midia.current && ligacao === 'connected'
       ? 'A sua tela não está sendo compartilhada: o atendente ouve você, mas não vê a tela.'
       : 'Falta liberar a tela para o atendente ver.')
@@ -863,14 +1330,8 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
         : ligacao === 'disconnected' ? 'A conexão com o atendente caiu; tentando retomar…'
           : 'Conectando tela e áudio ao atendente…';
 
-  const tituloDaJanela = `Suporte conectado${chamada?.atendente ? ` · ${chamada.atendente}` : ''}`;
+  const tituloDaJanela = `${atendenteNaChamada ? 'Suporte conectado' : 'Suporte aguardando o atendente'}${chamada?.atendente ? ` · ${chamada.atendente}` : ''}`;
 
-  // A situação em ícone, de FORMA diferente por estado (não só pela cor): o texto inteiro fica no hint.
-  const iconeDaSituacao = telaPronta && ligacao === 'connected'
-    ? <CheckCircle className="w-4 h-4 text-success" aria-hidden="true" />
-    : ligacao === 'failed' || !telaPronta
-      ? <TriangleAlert className="w-4 h-4 text-warning" aria-hidden="true" />
-      : <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />;
 
   const dicaDoMicrofone = !temMicrofone
     ? 'O microfone não foi liberado: você ouve o atendente, mas ele não ouve você'
@@ -905,14 +1366,12 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
         </p>
         <div className="flex items-center gap-1.5">
           <div
-            className="flex items-center gap-1 px-1 h-9 rounded-lg cursor-move select-none touch-none text-brand-text-secondary hover:bg-hover"
+            className="flex items-center px-0.5 h-9 cursor-move select-none touch-none text-brand-text-secondary"
             {...janela.alca}
             title={`${tituloDaJanela}\n${situacaoDaLigacao}\nArraste para mudar a janela de lugar.`}
             data-testid="suporte-barra-alca"
           >
             <GripVertical className="w-4 h-4" aria-hidden="true" />
-            <Headset className="w-5 h-5 text-indigo-700" aria-hidden="true" />
-            {iconeDaSituacao}
           </div>
           {!enrolada && (<>
           {telaPronta ? (

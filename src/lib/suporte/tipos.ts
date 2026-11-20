@@ -49,6 +49,10 @@ export interface DisponibilidadeDoSuporte {
   horarios: string[];
   /** Prazo de espera na fila, em minutos (o do servidor). */
   minutosDeEspera: number;
+  /** ID da extensão de suporte do SaaS (captura sem seletor); vazio quando não há extensão. */
+  extensaoID?: string;
+  /** Endereço da extensão na loja, para instalar; vazio quando não há onde instalar. */
+  extensaoURL?: string;
 }
 
 /**
@@ -82,6 +86,16 @@ export const APP_DE_ATENDIMENTO = 'SYSxAtendimentoSuporte';
 
 /** Comando do botão "Atender a próxima" daquela App: é ele que o aviso de chamada recebida aperta. */
 export const COMANDO_DE_ATENDER = 'supportAttend';
+
+/**
+ * Início da `referencia` do aviso do inbox que diz que o atendente retornou o chamado (`suporte:retorno:<chamada>`);
+ * espelha `ServicoChamadaSuporte.REFERENCIA_DO_RETORNO` do back. É por ela que a tela de quem chamou reconhece o aviso
+ * e abre o diálogo de atender, com toque.
+ */
+export const REFERENCIA_DO_RETORNO = 'suporte:retorno';
+
+/** Onde a aba guarda a chamada em que ENTROU (sobrevive ao F5, não a uma aba nova): é o que a retomada sozinha retoma. */
+export const CHAVE_DA_SESSAO_DE_SUPORTE = 'tootega.suporte.chamada';
 
 /** Converte os servidores do back para o formato do navegador. STUN não leva usuário nem credencial. */
 export function servidoresDoNavegador(pServidores: ServidorICE[]): RTCIceServer[] {

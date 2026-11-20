@@ -27,11 +27,12 @@
  * antes de sair o atendente diz se o caso foi resolvido.
  */
 
-import { useCallback, useEffect, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react';
-import { CheckCircle, GripVertical, Headset, Loader2, Mic, MicOff, MousePointerClick, PhoneOff, TriangleAlert } from 'lucide-react';
+import { useCallback, useContext, useEffect, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react';
+import { ArrowUpToLine, CheckCircle, GripVertical, Loader2, Mic, MicOff, MousePointerClick, PhoneOff, TriangleAlert } from 'lucide-react';
 import type { HubConnection } from '@microsoft/signalr';
 
 import { api } from '@core/lib/api';
+import { TabsContext } from '@core/contexts';
 import { getFieldValue } from '@core/lib/fieldAccess';
 import { XModalShell } from '@core/components/templates/XModalShell';
 import { useMolduraDeModal } from '@core/hooks/useMolduraDeModal';
@@ -49,6 +50,7 @@ import { XBotaoDeCamera } from './XBotaoDeCamera';
 import { XBotaoDeEnrolar } from './XBotaoDeEnrolar';
 import { XQuadrosDeCamera } from './XQuadrosDeCamera';
 import { useCameraDeSuporte } from './useCameraDeSuporte';
+import { CHAVE_DO_PAINEL_DO_ATENDENTE, usePosicaoDoPainel } from './usePosicaoDoPainel';
 
 /** Intervalo mínimo entre dois gestos de movimento: o ponteiro segue suave sem inundar o canal. */
 const INTERVALO_DO_MOVIMENTO_MS = 40;
@@ -82,15 +84,31 @@ export function XRetornarChamado(pProps: XButtonActionComponentProps): JSX.Eleme
   return <SessaoDeAtendimento {...pProps} modo="retorno" />;
 }
 
-function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProps): JSX.Element | null {
+function SessaoDeAtendimento({ modo, selectedRow, tabID, onCancel, onDone }: SessaoProps): JSX.Element | null {
   const selecionado = String(getFieldValue(selectedRow ?? {}, 'ID') ?? '');
 
   const [chamada, setChamada] = useState<ChamadaDeSuporte | null>(null);
+
+  // Assumida a chamada, a aba passa a dizer QUEM está sendo atendido (dono, 2026-11-19); ao sair do atendimento,
+  // volta ao nome da App. Opcional: fora de uma aba (nos testes, por exemplo) não há título a trocar.
+  const abas = useContext(TabsContext);
+  const definirTitulo = abas?.definirTitulo;
+  const atendido = chamada?.usuario ?? '';
+
+  useEffect(() => {
+    if (!definirTitulo || !tabID || !atendido)
+      return;
+
+    definirTitulo(tabID, atendido);
+
+    return () => definirTitulo(tabID, '');
+  }, [definirTitulo, tabID, atendido]);
   const [ligacao, setLigacao] = useState<RTCPeerConnectionState>('new');
   const [temVideo, setTemVideo] = useState(false);
   // Quem chamou parou de compartilhar a tela (a ligação e a voz seguem).
   const [telaParada, setTelaParada] = useState(false);
-  const [usuarioPresente, setUsuarioPresente] = useState(modo === 'proxima');
+  // Quem chamou está na chamada? `null` enquanto esta aba não entrou nela: o servidor conta, ao entrar, se ele já está.
+  const [usuarioPresente, setUsuarioPresente] = useState<boolean | null>(null);
   const [operando, setOperando] = useState(false);
   const [temMicrofone, setTemMicrofone] = useState(false);
   const [mudo, setMudo] = useState(false);
@@ -108,9 +126,11 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
   const camera = useCameraDeSuporte(() => midia.current);
 
   // O painel de controle flutua sobre o vídeo: arrasta-se pelo cabeçalho, contido na área da App.
+  // A posição em que o atendente deixou o painel fica no perfil: o próximo atendimento o abre ali.
+  const [posicaoDoPainel, gravarPosicaoDoPainel] = usePosicaoDoPainel(CHAVE_DO_PAINEL_DO_ATENDENTE);
   const painel = useMolduraDeModal({
     arrastavel: true, redimensionavel: false, posicionamento: 'ancorado', conterAoMudarDeTamanho: true,
-    aberto: !!chamada && !encerrada,
+    aberto: !!chamada && !encerrada, quadroSalvo: posicaoDoPainel, aoMudarQuadro: gravarPosicaoDoPainel,
   });
   const [painelEnrolado, setPainelEnrolado] = useState(false);
   const [zIndex] = useState(() => ZIndexManager.next());
@@ -252,6 +272,10 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
         // Entrar na chamada é o que faz quem chamou mandar a oferta: só depois de o microfone estar decidido.
         await canal.start();
         await entrarNaChamada(canal, id);
+
+        // Entrou e o servidor não contou que quem chamou está lá: ele não está (ainda, ou saiu).
+        if (vivo)
+          setUsuarioPresente((pAtual) => pAtual ?? false);
       } catch {
         if (vivo)
           cancelar.current();
@@ -302,6 +326,12 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
       setOcupado(false);
     }
   }, [encerrada, ocupado, onDone]);
+
+  // O painel de quem chamou aparece no vídeo (a captura é da aba inteira): o atendente o recolhe e o leva ao topo da
+  // aba dele sem precisar pedir ao usuário (dono, 2026-11-19). Vale mesmo só olhando: não é gesto.
+  const recolherPainelDoUsuario = useCallback((): void => {
+    midia.current?.enviarDados(serializarGesto({ t: 'recolherPainel' }));
+  }, []);
 
   const enviar = useCallback((pGesto: GestoRemoto): void => {
     if (operando)
@@ -404,7 +434,9 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
     );
   }
 
-  const situacao = !usuarioPresente
+  const situacao = usuarioPresente === null
+    ? 'Entrando na chamada…'
+    : !usuarioPresente
     ? (modo === 'retorno' && ligacao === 'new'
       ? 'Quem registrou o chamado foi avisado no sino. A tela aparece aqui quando ele abrir "Chamar suporte".'
       : 'Quem chamou saiu da página ou perdeu a conexão. Se ele voltar, a tela reaparece aqui.')
@@ -419,16 +451,14 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
     ? 'Operar a aba de quem chamou (disponível quando a tela dele estiver à vista)'
     : operando ? 'Operando a aba de quem chamou: clique para só ver' : 'Operar a aba de quem chamou';
 
+  const dicaDoPainelDoUsuario = ligacao !== 'connected' || !temVideo || telaParada
+    ? 'Recolher o painel de quem chamou e levá-lo ao topo da aba dele (disponível quando a tela dele estiver à vista)'
+    : 'Recolher o painel de quem chamou e levá-lo ao topo da aba dele, para ele não cobrir o que você precisa ver';
+
   const dicaDoMicrofone = !temMicrofone
     ? 'O seu microfone não foi liberado: você ouve quem chamou, mas ele não ouve você'
     : mudo ? 'Microfone desligado: clique para ligar' : 'Microfone ligado: clique para desligar';
 
-  // A situação em ícone, de FORMA diferente por estado (não só pela cor): o texto inteiro fica no hint.
-  const iconeDaSituacao = ligacao === 'connected' && temVideo && !telaParada
-    ? <CheckCircle className="w-4 h-4 text-success" aria-hidden="true" />
-    : ligacao === 'failed' || !usuarioPresente || telaParada
-      ? <TriangleAlert className="w-4 h-4 text-warning" aria-hidden="true" />
-      : <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />;
 
   const tituloDoPainel = `Atendimento · ${chamada.usuario} · ${chamada.assinante} · ${chamada.email} · grupo ${chamada.grupo}`;
 
@@ -462,14 +492,12 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
         <p className="sr-only" role="status" aria-live="polite" data-testid="atendimento-situacao">{situacao}</p>
         <div className="flex items-center gap-1.5">
           <div
-            className="flex items-center gap-1 px-1 h-9 rounded-lg cursor-move select-none touch-none text-brand-text-secondary hover:bg-hover"
+            className="flex items-center px-0.5 h-9 cursor-move select-none touch-none text-brand-text-secondary"
             {...painel.alca}
             title={`${tituloDoPainel}\n${situacao}\nArraste para mudar o painel de lugar.`}
             data-testid="atendimento-painel-alca"
           >
             <GripVertical className="w-4 h-4" aria-hidden="true" />
-            <Headset className="w-5 h-5 text-indigo-700" aria-hidden="true" />
-            {iconeDaSituacao}
           </div>
           {!painelEnrolado && (
             <>
@@ -488,6 +516,14 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
                 className={`${BOTAO_DE_ICONE} ${operando ? '!text-white !bg-indigo-700 !border-indigo-700 hover:!bg-indigo-800' : ''}`}
               >
                 <MousePointerClick className="w-4 h-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button" onClick={recolherPainelDoUsuario}
+                disabled={ligacao !== 'connected' || !temVideo || telaParada} data-testid="atendimento-recolher-painel-do-usuario"
+                aria-label={dicaDoPainelDoUsuario} title={dicaDoPainelDoUsuario}
+                className={BOTAO_DE_ICONE}
+              >
+                <ArrowUpToLine className="w-4 h-4" aria-hidden="true" />
               </button>
               <button
                 type="button" disabled={ocupado} onClick={() => void encerrar()} data-testid="atendimento-encerrar"

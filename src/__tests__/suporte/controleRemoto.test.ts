@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  lerAviso, lerGesto, pontoNaJanela, pontoNoVideo, serializarGesto, teclaEscreve, textoAposTecla,
+  lerAviso, lerGesto, lerPedido,pontoNaJanela, pontoNoVideo, serializarGesto, teclaEscreve, textoAposTecla,
 } from '@core/lib/suporte/controleRemoto';
 import { formatarDuracao, formatarEspera, formatarEstimativa, servidoresDoNavegador } from '@core/lib/suporte/tipos';
 
@@ -111,6 +111,18 @@ describe('lerAviso — o que quem chamou devolve ao atendente', () => {
     expect(lerAviso('{"t":"mover","x":0.1,"y":0.2}')).toBeNull();
     expect(lerAviso('null')).toBeNull();
     expect(lerAviso('texto')).toBeNull();
+  });
+});
+
+describe('lerPedido — o atendente pede o painel de quem chamou recolhido e no topo', () => {
+  it('lê o pedido; gesto, aviso e texto solto não são pedido', () => {
+    expect(lerPedido(serializarGesto({ t: 'recolherPainel' }))).toEqual({ t: 'recolherPainel' });
+    expect(lerPedido('{"t":"mover","x":0.1,"y":0.2}')).toBeNull();
+    expect(lerPedido('{"t":"bloqueio","motivo":"senha"}')).toBeNull();
+    expect(lerPedido('null')).toBeNull();
+    expect(lerPedido('texto')).toBeNull();
+    // E o pedido não passa por gesto: o reprodutor nunca o vê.
+    expect(lerGesto('{"t":"recolherPainel"}')).toBeNull();
   });
 });
 

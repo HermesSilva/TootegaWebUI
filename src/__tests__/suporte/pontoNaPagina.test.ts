@@ -6,7 +6,9 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { geometriaDaJanela, pontoNaPagina, type GeometriaDaJanela } from '../../lib/suporte/controleRemoto';
+import {
+  geometriaDaJanela, pontoNaPagina, pontoSemTarja, proporcaoDaSuperficie, type GeometriaDaJanela,
+} from '../../lib/suporte/controleRemoto';
 
 // Janela de 1000 × 800, página de 984 × 700: borda de 8 dos lados e embaixo, 92 no alto (abas e endereço).
 const JANELA: GeometriaDaJanela = {
@@ -63,5 +65,43 @@ describe('pontoNaPagina', () => {
       innerWidth: 800, innerHeight: 600, outerWidth: 800, outerHeight: 600, screenX: 5, screenY: 6,
       telaLargura: 1920, telaAltura: 1080, telaEsquerda: 0, telaTopo: 40,
     });
+  });
+});
+
+describe('pontoSemTarja', () => {
+  it('conteúdo mais estreito que o quadro: tarjas nas laterais, descontadas', () => {
+    // Conteúdo 4:3 num quadro 16:9: útil = 0,75 da largura, tarjas de 0,125 de cada lado.
+    const quadro = { largura: 1600, altura: 900 };
+    const perto = (pReal: { x: number; y: number } | null, pX: number, pY: number): void => {
+      expect(pReal).not.toBeNull();
+      expect(pReal!.x).toBeCloseTo(pX);
+      expect(pReal!.y).toBeCloseTo(pY);
+    };
+
+    perto(pontoSemTarja({ x: 0.13, y: 0.3 }, quadro, 4 / 3), 0.00667, 0.3);
+    perto(pontoSemTarja({ x: 0.5, y: 0.5 }, quadro, 4 / 3), 0.5, 0.5);
+    perto(pontoSemTarja({ x: 0.87, y: 1 }, quadro, 4 / 3), 0.99333, 1);
+  });
+
+  it('conteúdo mais largo que o quadro: tarjas em cima e embaixo', () => {
+    // Conteúdo 2:1 num quadro 16:9 (1,78): útil = 0,889 da altura.
+    const ponto = pontoSemTarja({ x: 0.3, y: 0.5 }, { largura: 1600, altura: 900 }, 2)!;
+
+    expect(ponto.x).toBeCloseTo(0.3);
+    expect(ponto.y).toBeCloseTo(0.5);
+    expect(pontoSemTarja({ x: 0.3, y: 0.01 }, { largura: 1600, altura: 900 }, 2)).toBeNull();
+  });
+
+  it('na tarja não é conteúdo; sem tarja (mesma proporção) ou sem medida, o ponto fica como está', () => {
+    expect(pontoSemTarja({ x: 0.05, y: 0.5 }, { largura: 1600, altura: 900 }, 4 / 3)).toBeNull();
+    expect(pontoSemTarja({ x: 0.2, y: 0.7 }, { largura: 1600, altura: 900 }, 16 / 9)).toEqual({ x: 0.2, y: 0.7 });
+    expect(pontoSemTarja({ x: 0.2, y: 0.7 }, { largura: 0, altura: 0 }, 4 / 3)).toEqual({ x: 0.2, y: 0.7 });
+  });
+
+  it('a proporção é a do que foi capturado: página, janela ou tela', () => {
+    expect(proporcaoDaSuperficie('browser', JANELA)).toBeCloseTo(984 / 700);
+    expect(proporcaoDaSuperficie(undefined, JANELA)).toBeCloseTo(984 / 700);
+    expect(proporcaoDaSuperficie('window', JANELA)).toBeCloseTo(1000 / 800);
+    expect(proporcaoDaSuperficie('monitor', JANELA)).toBeCloseTo(1920 / 1080);
   });
 });

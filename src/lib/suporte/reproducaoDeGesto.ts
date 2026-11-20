@@ -16,7 +16,8 @@
  */
 
 import {
-  geometriaDaJanela, pontoNaPagina, teclaEscreve, textoAposTecla, type GestoRemoto, type SuperficieCompartilhada,
+  geometriaDaJanela, pontoNaPagina, pontoSemTarja, proporcaoDaSuperficie, teclaEscreve, textoAposTecla,
+  type GestoRemoto, type QuadroDoVideo, type SuperficieCompartilhada,
 } from './controleRemoto';
 import { ehCampoDeEscrita, type CampoDeEscrita } from './cursorVirtual';
 
@@ -48,6 +49,7 @@ export class ReprodutorDeGestos {
   private _Pressionado: Element | null = null;
   private _UltimoClique: { alvo: Element; instante: number } | null = null;
   private _Superficie: SuperficieCompartilhada | undefined;
+  private _Quadro: () => QuadroDoVideo | null = () => null;
 
   /**
    * @param pAoMover Chamado a cada gesto com posição, em pixels da janela: é onde quem hospeda desenha o
@@ -78,6 +80,14 @@ export class ReprodutorDeGestos {
     this._Superficie = pSuperficie;
   }
 
+  /**
+   * De onde ler o tamanho do quadro de vídeo que sai daqui (lido a cada gesto: muda quando a janela muda). É o que
+   * permite desfazer as tarjas que a captura põe quando as proporções diferem (`pontoSemTarja`).
+   */
+  definirQuadro(pQuadro: () => QuadroDoVideo | null): void {
+    this._Quadro = pQuadro;
+  }
+
   /** Para de escutar os gestos do usuário. Chamar ao fim do atendimento. */
   parar(): void {
     for (const evento of EVENTOS_DO_USUARIO)
@@ -87,7 +97,12 @@ export class ReprodutorDeGestos {
   aplicar(pGesto: GestoRemoto): DesfechoDoGesto {
     if (pGesto.t !== 'tecla') {
       const janela = this._Documento.defaultView;
-      const ponto = janela ? pontoNaPagina(pGesto, this._Superficie, geometriaDaJanela(janela)) : null;
+      const geometria = janela ? geometriaDaJanela(janela) : null;
+      const quadro = this._Quadro();
+      const noConteudo = geometria && quadro
+        ? pontoSemTarja(pGesto, quadro, proporcaoDaSuperficie(this._Superficie, geometria))
+        : pGesto;
+      const ponto = geometria && noConteudo ? pontoNaPagina(noConteudo, this._Superficie, geometria) : null;
 
       // Fora da página (na barra de abas ou de endereço do navegador, ou em outra janela): nada a fazer aqui.
       if (!ponto)

@@ -21,6 +21,13 @@ export type GestoRemoto =
 /** Aviso de quem chamou para o atendente: o gesto não foi aplicado, e por quê. */
 export type AvisoDeControle = { t: 'bloqueio'; motivo: 'senha' | 'usuario' };
 
+/**
+ * Pedido do atendente sobre o painel de quem chamou: recolhê-lo e levá-lo ao topo da aba (dono, 2026-11-19). O painel
+ * aparece no vídeo — a captura é da aba inteira, e recortá-la não é opção —; o atendente o tira do caminho sem pedir
+ * ao usuário. Não é gesto: vale também quando o atendente só olha, e não passa pelo reprodutor.
+ */
+export type PedidoDoAtendente = { t: 'recolherPainel' };
+
 export interface Caixa {
   left: number;
   top: number;
@@ -133,6 +140,49 @@ export function pontoNaPagina(pPonto: Ponto, pSuperficie: SuperficieCompartilhad
   return { x: Math.round(x), y: Math.round(y) };
 }
 
+/** Tamanho, em pixels, do quadro de vídeo que sai de quem chamou. */
+export interface QuadroDoVideo {
+  largura: number;
+  altura: number;
+}
+
+/**
+ * Desfaz as TARJAS do quadro (dono, 2026-11-19: a seta remota caía longe do cursor do atendente). A captura da aba
+ * encaixa a página num quadro de tamanho limitado e, quando as proporções diferem, completa com faixas pretas —
+ * nas laterais ou em cima e embaixo. O atendente mede o clique sobre o quadro INTEIRO; aqui o ponto passa a ser
+ * medido sobre a parte que é conteúdo (a página, a janela ou a tela, conforme `pProporcao` = largura ÷ altura dela).
+ * `null` quando o ponto cai na tarja. Sem tarja (proporções iguais), devolve o mesmo ponto.
+ */
+export function pontoSemTarja(pPonto: Ponto, pQuadro: QuadroDoVideo, pProporcao: number): Ponto | null {
+  if (pQuadro.largura <= 0 || pQuadro.altura <= 0 || !(pProporcao > 0))
+    return pPonto;
+
+  const proporcaoDoQuadro = pQuadro.largura / pQuadro.altura;
+
+  // Conteúdo mais largo que o quadro ⇒ tarjas em cima e embaixo; mais estreito ⇒ nas laterais.
+  const larguraUtil = proporcaoDoQuadro > pProporcao ? pProporcao / proporcaoDoQuadro : 1;
+  const alturaUtil = proporcaoDoQuadro > pProporcao ? 1 : proporcaoDoQuadro / pProporcao;
+
+  const x = (pPonto.x - (1 - larguraUtil) / 2) / larguraUtil;
+  const y = (pPonto.y - (1 - alturaUtil) / 2) / alturaUtil;
+
+  if (x < 0 || x > 1 || y < 0 || y > 1)
+    return null;
+
+  return { x, y };
+}
+
+/** A proporção (largura ÷ altura) do que foi capturado: a página, a janela ou a tela. */
+export function proporcaoDaSuperficie(pSuperficie: SuperficieCompartilhada | undefined, pGeometria: GeometriaDaJanela): number {
+  if (pSuperficie === 'window')
+    return pGeometria.outerWidth / pGeometria.outerHeight;
+
+  if (pSuperficie === 'monitor')
+    return pGeometria.telaLargura / pGeometria.telaAltura;
+
+  return pGeometria.innerWidth / pGeometria.innerHeight;
+}
+
 /** As medidas da janela de agora, para `pontoNaPagina`. */
 export function geometriaDaJanela(pJanela: Window): GeometriaDaJanela {
   const tela = pJanela.screen as Screen & { availLeft?: number; availTop?: number };
@@ -151,7 +201,7 @@ export function geometriaDaJanela(pJanela: Window): GeometriaDaJanela {
   };
 }
 
-export function serializarGesto(pGesto: GestoRemoto | AvisoDeControle): string {
+export function serializarGesto(pGesto: GestoRemoto | AvisoDeControle | PedidoDoAtendente): string {
   return JSON.stringify(pGesto);
 }
 
@@ -209,6 +259,17 @@ export function lerGesto(pTexto: string): GestoRemoto | null {
 
     default:
       return null;
+  }
+}
+
+/** Lê um pedido do atendente sobre o painel. `null` para qualquer outra coisa (inclusive os gestos). */
+export function lerPedido(pTexto: string): PedidoDoAtendente | null {
+  try {
+    const bruto = JSON.parse(pTexto) as Record<string, unknown> | null;
+
+    return bruto?.t === 'recolherPainel' ? { t: 'recolherPainel' } : null;
+  } catch {
+    return null;
   }
 }
 

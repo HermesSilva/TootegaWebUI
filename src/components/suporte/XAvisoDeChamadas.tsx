@@ -12,10 +12,14 @@
  *
  * <b>Chamada nova abre o aviso de chamada recebida</b> (dono, 2026-11-19): quando entra na fila uma chamada que o
  * atendente ainda não viu, aparece o diálogo com quem chamou e o botão "Atender", que abre a App de atendimento
- * já iniciando o atendimento, e toca um som curto. "Agora não" dispensa AQUELA chamada (o número continua no
+ * já iniciando o atendimento, e toca o toque de chamada, repetido até ele atender, dispensar ou a chamada cair. "Agora não" dispensa AQUELA chamada (o número continua no
  * cabeçalho); a seguinte avisa de novo. O aviso chega por PUSH (o hub manda `FilaMudou` quando a fila muda) e
  * aparece MESMO durante um atendimento (dono, 2026-11-19): aí ele diz que é preciso encerrar o atendimento em
  * curso para atender esta, porque o atendente cuida de uma chamada por vez.
+ *
+ * <b>Atendimento em curso sobrevive ao F5</b> (dono, 2026-11-19): na primeira leitura depois de a página carregar, se o
+ * atendente tem um atendimento em curso, a App de atendimento reabre sozinha nele ("Atender a próxima" devolve o
+ * atendimento que já é dele). Só na carga: durante o uso, quem abre a sessão é o atendente.
  *
  * Quem é atendente não se decide aqui: é quem tem a App "Atendimento de suporte" no próprio menu (o menu
  * já vem podado pelo back). Para todos os outros o componente não conecta nada e não desenha nada.
@@ -35,6 +39,7 @@ import {
 } from '@core/lib/suporte/tipos';
 
 import { XChamadaRecebida } from './XChamadaRecebida';
+import { useToqueDeChamada } from './useToqueDeChamada';
 
 const SEM_PENDENCIAS: PendenciasDoSuporte = { naFila: 0, noQuadro: 0, emAtendimento: false, proxima: null };
 
@@ -51,6 +56,11 @@ export function XAvisoDeChamadas(): JSX.Element | null {
   // As chamadas que este atendente já viu no aviso (atendeu ou dispensou): não avisam de novo.
   const [vistas, setVistas] = useState<ReadonlySet<string>>(() => new Set());
   const tocada = useRef<string | null>(null);
+  // A primeira leitura depois de carregar a página: é nela que um atendimento em curso se reabre sozinho.
+  const primeiraLeitura = useRef(true);
+  // Abre a App de atendimento apertando "Atender a próxima" (ou pede a ação à aba dela, já aberta). Por ref, porque
+  // a leitura das pendências não acompanha o menu e as abas de cada render.
+  const abrirAtendimento = useRef<() => void>(() => {});
 
   const itemDoAtendimento = menu?.groups
     .flatMap((pGrupo) => pGrupo.items)
@@ -61,12 +71,20 @@ export function XAvisoDeChamadas(): JSX.Element | null {
     try {
       const resposta = await api.get<PendenciasDoSuporte>(`${ROTA_DAS_CHAMADAS}/pendentes`, undefined, true);
 
+      const emAtendimento = resposta?.emAtendimento === true;
+
       setPendencias({
         naFila: Number(resposta?.naFila) || 0,
         noQuadro: Number(resposta?.noQuadro) || 0,
-        emAtendimento: resposta?.emAtendimento === true,
+        emAtendimento,
         proxima: resposta?.proxima?.id ? resposta.proxima : null,
       });
+
+      if (primeiraLeitura.current) {
+        primeiraLeitura.current = false;
+        if (emAtendimento)
+          abrirAtendimento.current();
+      }
     } catch {
       // Sem resposta, valem os últimos números: o aviso não some nem aparece por causa de uma falha de rede.
     }
@@ -100,22 +118,24 @@ export function XAvisoDeChamadas(): JSX.Element | null {
     ? pendencias.proxima
     : null;
 
-  // O som sai uma vez por chamada, quando o aviso dela aparece.
+  // Livre, o toque se REPETE enquanto o aviso estiver na tela (dono, 2026-11-19): para quando o atendente atende ou
+  // dispensa, ou quando a chamada cai — sai da fila por outro atendente, pelo prazo ou porque quem chamou desistiu, o
+  // que o push da fila traz. Em atendimento, toca uma vez só: ele está numa conversa e não pode atender agora.
+  useToqueDeChamada(aAvisar !== null && !pendencias.emAtendimento);
+
   useEffect(() => {
-    if (aAvisar && tocada.current !== aAvisar.id) {
+    if (aAvisar && pendencias.emAtendimento && tocada.current !== aAvisar.id) {
       tocada.current = aAvisar.id;
       tocarAvisoDeChamada();
     }
-  }, [aAvisar]);
+  }, [aAvisar, pendencias.emAtendimento]);
 
   const marcarVista = (pID: string): void => setVistas((pAtuais) => new Set(pAtuais).add(pID));
 
   // Abre a App de atendimento apertando "Atender a próxima"; já aberta, ela vem para a frente e o botão é apertado nela.
-  const atender = (): void => {
-    if (!aAvisar || !itemDoAtendimento || pendencias.emAtendimento)
+  abrirAtendimento.current = () => {
+    if (!itemDoAtendimento)
       return;
-
-    marcarVista(aAvisar.id);
 
     const abertas = getTabsByMenuItemID(itemDoAtendimento.id);
 
@@ -123,6 +143,14 @@ export function XAvisoDeChamadas(): JSX.Element | null {
       pedirAcao(abertas[0].id, COMANDO_DE_ATENDER);
     else
       openTab(itemDoAtendimento, undefined, undefined, { acao: COMANDO_DE_ATENDER });
+  };
+
+  const atender = (): void => {
+    if (!aAvisar || !itemDoAtendimento || pendencias.emAtendimento)
+      return;
+
+    marcarVista(aAvisar.id);
+    abrirAtendimento.current();
   };
 
   const avisoDeChamada = aAvisar && (
