@@ -80,6 +80,77 @@ export function pontoNaJanela(pPonto: Ponto, pLargura: number, pAltura: number):
   };
 }
 
+/** O que quem chamou compartilhou: a aba, a janela do navegador ou a tela inteira (o `displaySurface`). */
+export type SuperficieCompartilhada = 'browser' | 'window' | 'monitor';
+
+/** As medidas da janela de quem chamou, em pixels CSS, lidas na hora do gesto (a janela pode ter mudado). */
+export interface GeometriaDaJanela {
+  innerWidth: number;
+  innerHeight: number;
+  outerWidth: number;
+  outerHeight: number;
+  /** Posição da janela na área de trabalho. */
+  screenX: number;
+  screenY: number;
+  /** A tela em que a janela está: tamanho e canto (`availLeft`/`availTop`). */
+  telaLargura: number;
+  telaAltura: number;
+  telaEsquerda: number;
+  telaTopo: number;
+}
+
+/**
+ * O ponto do vídeo (0 a 1) na PÁGINA de quem chamou, em pixels, conforme o que ele compartilhou. `null` quando
+ * o ponto cai fora da página (na barra de abas, na de endereço, em outra janela da tela).
+ *
+ * - `browser` (a aba): o vídeo É a página.
+ * - `window` (a janela do navegador, dono 2026-11-19 — sem a barra "compartilhando esta aba" que o Chrome põe na
+ *   captura de aba): o vídeo é a janela inteira, com as abas e a barra de endereço no alto. A página fica
+ *   embaixo, com a mesma borda dos lados e de baixo: borda = (externa − interna) / 2 na largura, e o alto é o
+ *   que sobra da altura depois da borda de baixo.
+ * - `monitor` (a tela inteira): o vídeo é a tela; a janela está nela em `screenX`/`screenY`, a partir do canto
+ *   da tela.
+ */
+export function pontoNaPagina(pPonto: Ponto, pSuperficie: SuperficieCompartilhada | undefined, pGeometria: GeometriaDaJanela): Ponto | null {
+  const g = pGeometria;
+
+  if (!pSuperficie || pSuperficie === 'browser')
+    return pontoNaJanela(pPonto, g.innerWidth, g.innerHeight);
+
+  const borda = Math.max(0, (g.outerWidth - g.innerWidth) / 2);
+  const alto = Math.max(0, g.outerHeight - g.innerHeight - borda);
+
+  const [x, y] = pSuperficie === 'window'
+    ? [pPonto.x * g.outerWidth - borda, pPonto.y * g.outerHeight - alto]
+    : [
+      pPonto.x * g.telaLargura + g.telaEsquerda - g.screenX - borda,
+      pPonto.y * g.telaAltura + g.telaTopo - g.screenY - alto,
+    ];
+
+  if (x < 0 || y < 0 || x >= g.innerWidth || y >= g.innerHeight)
+    return null;
+
+  return { x: Math.round(x), y: Math.round(y) };
+}
+
+/** As medidas da janela de agora, para `pontoNaPagina`. */
+export function geometriaDaJanela(pJanela: Window): GeometriaDaJanela {
+  const tela = pJanela.screen as Screen & { availLeft?: number; availTop?: number };
+
+  return {
+    innerWidth: pJanela.innerWidth,
+    innerHeight: pJanela.innerHeight,
+    outerWidth: pJanela.outerWidth || pJanela.innerWidth,
+    outerHeight: pJanela.outerHeight || pJanela.innerHeight,
+    screenX: pJanela.screenX,
+    screenY: pJanela.screenY,
+    telaLargura: tela?.width ?? pJanela.innerWidth,
+    telaAltura: tela?.height ?? pJanela.innerHeight,
+    telaEsquerda: tela?.availLeft ?? 0,
+    telaTopo: tela?.availTop ?? 0,
+  };
+}
+
 export function serializarGesto(pGesto: GestoRemoto | AvisoDeControle): string {
   return JSON.stringify(pGesto);
 }

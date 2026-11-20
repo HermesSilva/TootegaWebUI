@@ -15,7 +15,10 @@
  *    encerra a sessão de quem chamou é ele mesmo, ou o atendente pelo lado dele.
  */
 
-import { pontoNaJanela, teclaEscreve, textoAposTecla, type GestoRemoto } from './controleRemoto';
+import {
+  geometriaDaJanela, pontoNaPagina, teclaEscreve, textoAposTecla, type GestoRemoto, type SuperficieCompartilhada,
+} from './controleRemoto';
+import { ehCampoDeEscrita, type CampoDeEscrita } from './cursorVirtual';
 
 /** O que foi feito do gesto. `senha` e `usuario` voltam ao atendente como aviso. */
 export type DesfechoDoGesto = 'aplicado' | 'ignorado' | 'senha' | 'usuario';
@@ -35,12 +38,6 @@ const TABULAVEIS = 'a[href], button:not([disabled]), input:not([disabled]):not([
 
 const EVENTOS_DO_USUARIO = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'] as const;
 
-type CampoDeTexto = HTMLInputElement | HTMLTextAreaElement;
-
-const ehCampoDeTexto = (pElemento: Element | null): pElemento is CampoDeTexto =>
-  pElemento instanceof HTMLTextAreaElement
-  || (pElemento instanceof HTMLInputElement
-    && !['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'range', 'color', 'image', 'hidden'].includes(pElemento.type));
 
 export class ReprodutorDeGestos {
   private readonly _Documento: Document;
@@ -50,6 +47,7 @@ export class ReprodutorDeGestos {
   private _UltimoGestoDoUsuario = Number.NEGATIVE_INFINITY;
   private _Pressionado: Element | null = null;
   private _UltimoClique: { alvo: Element; instante: number } | null = null;
+  private _Superficie: SuperficieCompartilhada | undefined;
 
   /**
    * @param pAoMover Chamado a cada gesto com posição, em pixels da janela: é onde quem hospeda desenha o
@@ -72,6 +70,14 @@ export class ReprodutorDeGestos {
       this._Documento.addEventListener(evento, this._MarcarGestoDoUsuario, { capture: true, passive: true });
   }
 
+  /**
+   * O que quem chamou compartilhou (aba, janela ou tela inteira): é por isso que o ponto do vídeo vira ponto da
+   * página. Sem informação, vale a aba, em que o vídeo é a própria página.
+   */
+  definirSuperficie(pSuperficie: SuperficieCompartilhada | undefined): void {
+    this._Superficie = pSuperficie;
+  }
+
   /** Para de escutar os gestos do usuário. Chamar ao fim do atendimento. */
   parar(): void {
     for (const evento of EVENTOS_DO_USUARIO)
@@ -81,7 +87,11 @@ export class ReprodutorDeGestos {
   aplicar(pGesto: GestoRemoto): DesfechoDoGesto {
     if (pGesto.t !== 'tecla') {
       const janela = this._Documento.defaultView;
-      const ponto = pontoNaJanela(pGesto, janela?.innerWidth ?? 0, janela?.innerHeight ?? 0);
+      const ponto = janela ? pontoNaPagina(pGesto, this._Superficie, geometriaDaJanela(janela)) : null;
+
+      // Fora da página (na barra de abas ou de endereço do navegador, ou em outra janela): nada a fazer aqui.
+      if (!ponto)
+        return 'ignorado';
 
       // O ponteiro do atendente aparece SEMPRE, mesmo quando o gesto é descartado: apontar não é operar.
       this._AoMover(ponto.x, ponto.y);
@@ -251,7 +261,7 @@ export class ReprodutorDeGestos {
     if (pGesto.k === 'Enter' && !pGesto.ctrl && !pGesto.alt) {
       if (pAlvo instanceof HTMLTextAreaElement)
         this._Escrever(pAlvo, { k: '\n', ctrl: false, alt: false });
-      else if (pAlvo instanceof HTMLInputElement && ehCampoDeTexto(pAlvo))
+      else if (pAlvo instanceof HTMLInputElement && ehCampoDeEscrita(pAlvo))
         pAlvo.form?.requestSubmit?.();
       else if (pAlvo instanceof HTMLElement && pAlvo.matches('button, a[href], [role="button"], input'))
         pAlvo.click();
@@ -264,13 +274,13 @@ export class ReprodutorDeGestos {
       return;
     }
 
-    if (ehCampoDeTexto(pAlvo) && !pAlvo.readOnly && !pAlvo.disabled)
+    if (ehCampoDeEscrita(pAlvo) && !pAlvo.readOnly && !pAlvo.disabled)
       this._Escrever(pAlvo, pGesto);
     else if (pAlvo instanceof HTMLElement && pAlvo.isContentEditable && teclaEscreve(pGesto))
       this._Documento.execCommand?.('insertText', false, pGesto.k);
   }
 
-  private _Escrever(pCampo: CampoDeTexto, pGesto: { k: string; ctrl: boolean; alt: boolean }): void {
+  private _Escrever(pCampo: CampoDeEscrita, pGesto: { k: string; ctrl: boolean; alt: boolean }): void {
     // Campo que não expõe seleção (número, e-mail, data) devolve nulo: escreve-se no fim.
     let inicio: number | null = null;
     let fim: number | null = null;

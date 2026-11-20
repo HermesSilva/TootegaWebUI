@@ -8,8 +8,15 @@
  *     enquanto não havia atendente online). Quem o registrou é avisado no sino e entra na sessão ao abrir
  *     "Chamar suporte".
  *
- * Daí em diante é a mesma sessão: o vídeo da tela de quem chamou, o áudio nos dois sentidos e o controle
- * da aba dele.
+ * Daí em diante é a mesma sessão: o vídeo da tela de quem chamou, o áudio nos dois sentidos, a câmera dos
+ * dois lados (cada um liga a sua, e ela começa desligada) e o controle da aba dele.
+ *
+ * <b>A tela de quem chamou ocupa TODA a área da App</b> (dono, 2026-11-19): o atendente precisa ver o que o
+ * outro vê, do tamanho mais próximo possível. Os controles (situação, problema descrito, câmeras, microfone,
+ * operar, encerrar) ficam num PAINEL FLUTUANTE por cima do vídeo, que o atendente arrasta para onde não
+ * atrapalha e enrola até ficar só na alça. O painel é só de ícones, com o texto de cada um no hint (dono,
+ * 2026-11-19); texto à vista, só o problema descrito e o que pede ação. Tudo contido na área da App, como todo
+ * diálogo acionado por ela.
  *
  * O controle é feito SOBRE O VÍDEO: com "Operar a aba" ligado, o movimento do mouse, o clique, a roda e
  * as teclas viram gestos enviados pelo canal de dados, com as coordenadas normalizadas pelo tamanho da
@@ -21,12 +28,14 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react';
-import { CheckCircle, Loader2, Mic, MicOff, MousePointerClick, PhoneOff, TriangleAlert } from 'lucide-react';
+import { CheckCircle, GripVertical, Headset, Loader2, Mic, MicOff, MousePointerClick, PhoneOff, TriangleAlert } from 'lucide-react';
 import type { HubConnection } from '@microsoft/signalr';
 
 import { api } from '@core/lib/api';
 import { getFieldValue } from '@core/lib/fieldAccess';
 import { XModalShell } from '@core/components/templates/XModalShell';
+import { useMolduraDeModal } from '@core/hooks/useMolduraDeModal';
+import { ZIndexManager } from '@core/lib/zIndexManager';
 import type { XButtonActionComponentProps } from '@core/components/templates/XButtonActionRegistry';
 import { criarCanalDeSuporte, encerrarCanal, entrarNaChamada, sinalizar } from '@core/lib/suporte/canalDeSuporte';
 import { ConexaoDeMidia, pararMidia, pedirMicrofone } from '@core/lib/suporte/conexaoDeMidia';
@@ -35,6 +44,11 @@ import {
   ROTA_DAS_CHAMADAS, formatarDuracao, servidoresDoNavegador,
   type ChamadaDeSuporte, type ServidorICE, type TipoDeRecado,
 } from '@core/lib/suporte/tipos';
+
+import { XBotaoDeCamera } from './XBotaoDeCamera';
+import { XBotaoDeEnrolar } from './XBotaoDeEnrolar';
+import { XQuadrosDeCamera } from './XQuadrosDeCamera';
+import { useCameraDeSuporte } from './useCameraDeSuporte';
 
 /** Intervalo mínimo entre dois gestos de movimento: o ponteiro segue suave sem inundar o canal. */
 const INTERVALO_DO_MOVIMENTO_MS = 40;
@@ -47,8 +61,10 @@ const AVISO_DE_BLOQUEIO = {
   usuario: 'Quem chamou está usando o mouse ou o teclado agora; o seu gesto foi descartado. Combine por voz quem opera.',
 } as const;
 
+/** Botão só de ícone do painel de controle: o texto vai no hint. */
+const BOTAO_DE_ICONE = 'inline-flex items-center justify-center w-9 h-9 rounded-lg border border-border text-brand-text-primary bg-brand-surface hover:bg-hover disabled:opacity-50 disabled:cursor-not-allowed';
+
 const BOTAO_NEUTRO = 'inline-flex items-center gap-2 px-3 py-2 text-ui-sm font-medium text-brand-text-primary bg-brand-surface border border-border rounded-lg hover:bg-hover disabled:opacity-50';
-const BOTAO_VERMELHO = 'inline-flex items-center gap-2 px-3 py-2 text-ui-sm font-semibold text-white bg-red-700 rounded-lg hover:bg-red-800 disabled:opacity-50';
 
 type Modo = 'proxima' | 'retorno';
 
@@ -72,6 +88,8 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
   const [chamada, setChamada] = useState<ChamadaDeSuporte | null>(null);
   const [ligacao, setLigacao] = useState<RTCPeerConnectionState>('new');
   const [temVideo, setTemVideo] = useState(false);
+  // Quem chamou parou de compartilhar a tela (a ligação e a voz seguem).
+  const [telaParada, setTelaParada] = useState(false);
   const [usuarioPresente, setUsuarioPresente] = useState(modo === 'proxima');
   const [operando, setOperando] = useState(false);
   const [temMicrofone, setTemMicrofone] = useState(false);
@@ -86,6 +104,17 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
   const video = useRef<HTMLVideoElement | null>(null);
   const ultimoMovimento = useRef(0);
   const relogioDoAviso = useRef<number | null>(null);
+
+  const camera = useCameraDeSuporte(() => midia.current);
+
+  // O painel de controle flutua sobre o vídeo: arrasta-se pelo cabeçalho, contido na área da App.
+  const painel = useMolduraDeModal({
+    arrastavel: true, redimensionavel: false, posicionamento: 'ancorado', conterAoMudarDeTamanho: true,
+    aberto: !!chamada && !encerrada,
+  });
+  const [painelEnrolado, setPainelEnrolado] = useState(false);
+  const [zIndex] = useState(() => ZIndexManager.next());
+  const { aoReceberCamera, aoMudarCameraRemota, esquecerRemota, faixa: faixaDaCamera, desligar: desligarCamera } = camera;
 
   // Quem monta a ação recria os callbacks a cada render; por ref, eles não reiniciam a sessão.
   const cancelar = useRef(onCancel);
@@ -109,11 +138,14 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
     let vivo = true;
     let id = '';
     let hub: HubConnection | null = null;
+    let recados: Promise<void> = Promise.resolve();
 
     const desligarMidia = (): void => {
       midia.current?.fechar();
       midia.current = null;
+      esquecerRemota();
       setTemVideo(false);
+      setTelaParada(false);
       setLigacao('new');
     };
 
@@ -130,7 +162,7 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
         if (!vivo)
           return;
 
-        midia.current = new ConexaoDeMidia({
+        const conexao = new ConexaoDeMidia({
           servidores: servidoresDoNavegador(servidores),
           enviarRecado: (pT, pD) => sinalizar(canal, id, pT, pD),
           aoReceberMidia: (pRemota) => {
@@ -140,12 +172,23 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
             setTemVideo(pRemota.getVideoTracks().length > 0);
           },
           aoMudarEstado: setLigacao,
+          aoReceberCamera,
+          aoMudarCameraRemota,
+          aoMudarTelaRemota: (pLigada) => {
+            setTelaParada(!pLigada);
+            if (!pLigada)
+              setOperando(false);
+          },
           aoReceberDados: (pTexto) => {
             const bloqueio = lerAviso(pTexto);
             if (bloqueio)
               mostrarAviso(AVISO_DE_BLOQUEIO[bloqueio.motivo]);
           },
         });
+
+        // A câmera já ligada entra na resposta: a oferta reservou a faixa dela.
+        await conexao.definirCamera(faixaDaCamera());
+        midia.current = conexao;
       }
 
       await midia.current?.receberRecado(pTipo, pDados, pTipo === 'oferta' ? microfone.current : null);
@@ -175,9 +218,12 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
 
         hub = canal;
 
+        // Os recados são tratados UM DE CADA VEZ, na ordem de chegada. A oferta espera os servidores ICE (uma ida
+        // ao servidor), e os candidatos de rede que quem chamou manda logo em seguida chegariam antes de haver
+        // ligação para recebê-los — e se perderiam, deixando a ligação sem caminho.
         canal.on('Recado', (pID: string, pTipo: TipoDeRecado, pDados: string) => {
           if (pID === id)
-            void responder(pTipo, pDados).catch(() => desligarMidia());
+            recados = recados.then(() => responder(pTipo, pDados)).catch(() => desligarMidia());
         });
         canal.on('ParticipanteEntrou', (pID: string) => { if (pID === id) setUsuarioPresente(true); });
         canal.on('ParticipanteSaiu', (pID: string) => {
@@ -196,6 +242,7 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
           // Quem chamou encerrou do lado dele: a sessão acaba aqui também, e fica a pergunta final.
           if (!pChamada.emAberto) {
             desligarMidia();
+            desligarCamera();
             setOperando(false);
             setEncerrada(pChamada);
           }
@@ -221,7 +268,7 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
       if (relogioDoAviso.current !== null)
         window.clearTimeout(relogioDoAviso.current);
     };
-  }, [modo, selecionado, mostrarAviso]);
+  }, [modo, selecionado, mostrarAviso, aoReceberCamera, aoMudarCameraRemota, esquecerRemota, faixaDaCamera, desligarCamera]);
 
   const encerrar = useCallback(async () => {
     if (!chamada || ocupado)
@@ -232,12 +279,13 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
     try {
       setOperando(false);
       setEncerrada(await api.post<ChamadaDeSuporte>(`${ROTA_DAS_CHAMADAS}/${chamada.id}/encerrar`));
+      desligarCamera();
     } catch {
       // O motivo já saiu no diálogo de mensagem; o atendimento segue como está no servidor.
     } finally {
       setOcupado(false);
     }
-  }, [chamada, ocupado]);
+  }, [chamada, ocupado, desligarCamera]);
 
   const avaliar = useCallback(async (pResolvido: boolean) => {
     if (!encerrada || ocupado)
@@ -360,75 +408,123 @@ function SessaoDeAtendimento({ modo, selectedRow, onCancel, onDone }: SessaoProp
     ? (modo === 'retorno' && ligacao === 'new'
       ? 'Quem registrou o chamado foi avisado no sino. A tela aparece aqui quando ele abrir "Chamar suporte".'
       : 'Quem chamou saiu da página ou perdeu a conexão. Se ele voltar, a tela reaparece aqui.')
-    : ligacao === 'connected' ? (temVideo ? 'Conectado: você vê a tela de quem chamou.' : 'Conectado por áudio; quem chamou ainda não liberou a tela.')
+    : ligacao === 'connected' ? (telaParada ? 'Quem chamou parou de compartilhar a tela; vocês continuam se ouvindo. A tela volta aqui quando ele compartilhar de novo.'
+      : temVideo ? 'Conectado: você vê a tela de quem chamou.' : 'Conectado por áudio; quem chamou ainda não liberou a tela.')
       : ligacao === 'failed' ? 'A conexão de tela e áudio não se estabeleceu: as duas redes não se alcançaram e não houve servidor que retransmitisse (TURN). Encerre e peça nova chamada.'
         : ligacao === 'disconnected' ? 'A conexão caiu; tentando retomar…'
           : ligacao === 'connecting' ? 'Conectando tela e áudio…'
             : 'Aguardando quem chamou liberar a tela.';
 
+  const dicaDeOperar = ligacao !== 'connected' || !temVideo || telaParada
+    ? 'Operar a aba de quem chamou (disponível quando a tela dele estiver à vista)'
+    : operando ? 'Operando a aba de quem chamou: clique para só ver' : 'Operar a aba de quem chamou';
+
+  const dicaDoMicrofone = !temMicrofone
+    ? 'O seu microfone não foi liberado: você ouve quem chamou, mas ele não ouve você'
+    : mudo ? 'Microfone desligado: clique para ligar' : 'Microfone ligado: clique para desligar';
+
+  // A situação em ícone, de FORMA diferente por estado (não só pela cor): o texto inteiro fica no hint.
+  const iconeDaSituacao = ligacao === 'connected' && temVideo && !telaParada
+    ? <CheckCircle className="w-4 h-4 text-success" aria-hidden="true" />
+    : ligacao === 'failed' || !usuarioPresente || telaParada
+      ? <TriangleAlert className="w-4 h-4 text-warning" aria-hidden="true" />
+      : <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />;
+
+  const tituloDoPainel = `Atendimento · ${chamada.usuario} · ${chamada.assinante} · ${chamada.email} · grupo ${chamada.grupo}`;
+
   return (
-    <XModalShell
-      variant="inline" size="xl" draggable rolarConteudo={false}
-      title={`Atendimento · ${chamada.usuario}`} subtitle={`${chamada.assinante} · ${chamada.email} · grupo ${chamada.grupo}`}
-      closeLabel={'Encerrar o atendimento'} onClose={() => void encerrar()}
-      footer={
-        <div className="flex items-center justify-end w-full gap-2 flex-wrap">
-          <p className="mr-auto text-ui-sm text-brand-text-secondary" role="status" aria-live="polite" data-testid="atendimento-situacao">
-            {situacao}
-          </p>
-          {temMicrofone && (
-            <button type="button" onClick={alternarMudo} aria-pressed={mudo} className={BOTAO_NEUTRO}>
-              {mudo ? <MicOff className="w-4 h-4" aria-hidden="true" /> : <Mic className="w-4 h-4" aria-hidden="true" />}
-              {mudo ? 'Microfone desligado' : 'Microfone ligado'}
-            </button>
-          )}
-          <button
-            type="button" onClick={() => setOperando((pAtual) => !pAtual)} aria-pressed={operando}
-            disabled={ligacao !== 'connected' || !temVideo} data-testid="atendimento-operar"
-            className={`inline-flex items-center gap-2 px-3 py-2 text-ui-sm font-semibold rounded-lg border disabled:opacity-50 disabled:cursor-not-allowed ${
-              operando ? 'text-white bg-indigo-700 border-indigo-700 hover:bg-indigo-800' : 'text-brand-text-primary bg-brand-surface border-border hover:bg-hover'}`}
-          >
-            <MousePointerClick className="w-4 h-4" aria-hidden="true" />
-            {operando ? 'Operando a aba (clique para só ver)' : 'Operar a aba'}
-          </button>
-          <button type="button" disabled={ocupado} onClick={() => void encerrar()} data-testid="atendimento-encerrar" className={BOTAO_VERMELHO}>
-            <PhoneOff className="w-4 h-4" aria-hidden="true" /> {'Encerrar'}
-          </button>
-        </div>
-      }
+    <div
+      className="absolute inset-0 bg-black overflow-hidden" style={{ zIndex }}
+      role="region" aria-label={`Atendimento de suporte · ${chamada.usuario}`} data-testid="atendimento-sessao"
     >
-      <div className="flex flex-col flex-1 min-h-0 p-3 gap-2">
-        {chamada.descricao && (
-          <p className="text-ui-sm text-brand-text-primary" data-testid="atendimento-descricao">
-            <span className="font-medium">{'Problema descrito: '}</span>{chamada.descricao}
-          </p>
-        )}
-        {!temMicrofone && (
-          <p className="flex items-start gap-2 text-ui-sm text-brand-text-primary">
-            <TriangleAlert className="w-4 h-4 mt-0.5 shrink-0 text-warning" aria-hidden="true" />
-            <span>{'O seu microfone não foi liberado: você ouve quem chamou, mas ele não ouve você.'}</span>
-          </p>
-        )}
+      {/* A tela de quem chamou, inteira e sem corte, em toda a área: é sobre ela que os gestos são medidos. */}
+      <video
+        ref={video} autoPlay playsInline tabIndex={0} data-testid="atendimento-video"
+        aria-label={operando ? 'Tela de quem chamou; os seus gestos aqui são reproduzidos na aba dele' : 'Tela de quem chamou'}
+        onMouseMove={aoMover}
+        onMouseDown={(pEvento) => aoPressionarOuSoltar(pEvento, 'pressionar')}
+        onMouseUp={(pEvento) => aoPressionarOuSoltar(pEvento, 'soltar')}
+        onWheel={aoRolar}
+        onKeyDown={aoTeclar}
+        onContextMenu={(pEvento) => { if (operando) pEvento.preventDefault(); }}
+        className={`absolute inset-0 w-full h-full object-contain focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-600 ${
+          operando ? 'cursor-crosshair' : 'cursor-default'}`}
+      />
+
+      {/* O painel de controle: por cima do vídeo, arrastável pela alça, enrolável até ficar só nela. */}
+      <div
+        ref={painel.ref}
+        className="x-moldura-modal absolute right-4 bottom-4 max-w-[min(26rem,calc(100%-2rem))] max-h-[calc(100%-2rem)] flex flex-col gap-1.5 p-1.5 bg-brand-surface rounded-xl shadow-lg text-brand-text-primary will-change-transform transition-none"
+        data-testid="atendimento-painel"
+      >
+        {/* O que o painel diz em ícones, inteiro, para quem usa leitor de tela. */}
+        <p className="sr-only">{tituloDoPainel}</p>
+        <p className="sr-only" role="status" aria-live="polite" data-testid="atendimento-situacao">{situacao}</p>
+        <div className="flex items-center gap-1.5">
+          <div
+            className="flex items-center gap-1 px-1 h-9 rounded-lg cursor-move select-none touch-none text-brand-text-secondary hover:bg-hover"
+            {...painel.alca}
+            title={`${tituloDoPainel}\n${situacao}\nArraste para mudar o painel de lugar.`}
+            data-testid="atendimento-painel-alca"
+          >
+            <GripVertical className="w-4 h-4" aria-hidden="true" />
+            <Headset className="w-5 h-5 text-indigo-700" aria-hidden="true" />
+            {iconeDaSituacao}
+          </div>
+          {!painelEnrolado && (
+            <>
+              <XBotaoDeCamera camera={camera} compacto className={BOTAO_DE_ICONE} />
+              <button
+                type="button" onClick={alternarMudo} disabled={!temMicrofone} aria-pressed={temMicrofone ? mudo : undefined}
+                aria-label={dicaDoMicrofone} title={dicaDoMicrofone} data-testid="atendimento-microfone"
+                className={BOTAO_DE_ICONE}
+              >
+                {mudo || !temMicrofone ? <MicOff className="w-4 h-4" aria-hidden="true" /> : <Mic className="w-4 h-4" aria-hidden="true" />}
+              </button>
+              <button
+                type="button" onClick={() => setOperando((pAtual) => !pAtual)} aria-pressed={operando}
+                disabled={ligacao !== 'connected' || !temVideo || telaParada} data-testid="atendimento-operar"
+                aria-label={dicaDeOperar} title={dicaDeOperar}
+                className={`${BOTAO_DE_ICONE} ${operando ? '!text-white !bg-indigo-700 !border-indigo-700 hover:!bg-indigo-800' : ''}`}
+              >
+                <MousePointerClick className="w-4 h-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button" disabled={ocupado} onClick={() => void encerrar()} data-testid="atendimento-encerrar"
+                aria-label={'Encerrar o atendimento'} title={'Encerrar o atendimento'}
+                className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-white bg-red-700 hover:bg-red-800 disabled:opacity-50"
+              >
+                <PhoneOff className="w-4 h-4" aria-hidden="true" />
+              </button>
+            </>
+          )}
+          <XBotaoDeEnrolar enrolado={painelEnrolado} aoAlternar={() => setPainelEnrolado((pAtual) => !pAtual)} />
+        </div>
+
+        {/* O aviso de gesto recusado aparece mesmo enrolado: é a resposta ao que o atendente acabou de fazer. */}
         {aviso && (
-          <p className="flex items-start gap-2 text-ui-sm text-brand-text-primary" role="alert" data-testid="atendimento-aviso">
+          <p className="flex items-start gap-2 px-1 text-ui-sm" role="alert" data-testid="atendimento-aviso">
             <TriangleAlert className="w-4 h-4 mt-0.5 shrink-0 text-warning" aria-hidden="true" />
             <span>{aviso}</span>
           </p>
         )}
-        {/* A tela de quem chamou, inteira e sem corte: é sobre ela que os gestos são medidos. */}
-        <video
-          ref={video} autoPlay playsInline tabIndex={0} data-testid="atendimento-video"
-          aria-label={operando ? 'Tela de quem chamou; os seus gestos aqui são reproduzidos na aba dele' : 'Tela de quem chamou'}
-          onMouseMove={aoMover}
-          onMouseDown={(pEvento) => aoPressionarOuSoltar(pEvento, 'pressionar')}
-          onMouseUp={(pEvento) => aoPressionarOuSoltar(pEvento, 'soltar')}
-          onWheel={aoRolar}
-          onKeyDown={aoTeclar}
-          onContextMenu={(pEvento) => { if (operando) pEvento.preventDefault(); }}
-          className={`flex-1 min-h-[16rem] w-full bg-black rounded-lg object-contain focus:outline-none focus:ring-2 focus:ring-indigo-600 ${
-            operando ? 'cursor-crosshair' : 'cursor-default'}`}
-        />
+        {!painelEnrolado && (
+          <div className="flex flex-col gap-1.5 px-1 overflow-y-auto min-h-0">
+            {ligacao === 'failed' && (
+              <p className="flex items-start gap-2 text-ui-sm" role="alert">
+                <TriangleAlert className="w-4 h-4 mt-0.5 shrink-0 text-warning" aria-hidden="true" />
+                <span>{situacao}</span>
+              </p>
+            )}
+            {chamada.descricao && (
+              <p className="text-ui-sm" data-testid="atendimento-descricao">
+                <span className="font-medium">{'Problema descrito: '}</span>{chamada.descricao}
+              </p>
+            )}
+            <XQuadrosDeCamera camera={camera} nomeDaOutraPonta={'quem chamou'} />
+          </div>
+        )}
       </div>
-    </XModalShell>
+    </div>
   );
 }

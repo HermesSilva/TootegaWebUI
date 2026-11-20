@@ -40,16 +40,28 @@ export interface DisponibilidadeDoSuporte {
   disponivel: boolean;
   /** Por que não está disponível; vazio quando está. */
   motivo: string;
-  /** Há atendente do grupo logado agora: a chamada entra na fila. Falso ⇒ o chamado vai ao quadro. */
+  /**
+   * Há atendente do grupo logado agora. A chamada entra na fila nos dois casos; sem ninguém online, é mais
+   * provável que o prazo vença e o chamado vá ao quadro, e a tela adianta isso ao usuário.
+   */
   atendenteOnline: boolean;
   /** Horário de atendimento do grupo, um dia por linha. */
   horarios: string[];
+  /** Prazo de espera na fila, em minutos (o do servidor). */
+  minutosDeEspera: number;
 }
 
-/** Quantas chamadas esperam na fila e quantos chamados estão no quadro, nos grupos do atendente. */
+/**
+ * O que espera a equipe, nos grupos do atendente: os números do aviso no cabeçalho e a chamada que ele
+ * assumiria agora, para o aviso de chamada recebida.
+ */
 export interface PendenciasDoSuporte {
   naFila: number;
   noQuadro: number;
+  /** O atendente já está atendendo alguém: o aviso de chamada nova não o interrompe. */
+  emAtendimento: boolean;
+  /** A mais antiga da fila que não é do próprio atendente; `null` quando não há. */
+  proxima: ChamadaDeSuporte | null;
 }
 
 /** Servidor STUN/TURN, no formato do back; a conversão para `RTCIceServer` é de `servidoresDoNavegador`. */
@@ -67,6 +79,9 @@ export const HUB_DE_SUPORTE = '/hub/suporte';
 
 /** Nome da App de plataforma que atende as chamadas; é por ela que o cabeçalho sabe quem é atendente. */
 export const APP_DE_ATENDIMENTO = 'SYSxAtendimentoSuporte';
+
+/** Comando do botão "Atender a próxima" daquela App: é ele que o aviso de chamada recebida aperta. */
+export const COMANDO_DE_ATENDER = 'supportAttend';
 
 /** Converte os servidores do back para o formato do navegador. STUN não leva usuário nem credencial. */
 export function servidoresDoNavegador(pServidores: ServidorICE[]): RTCIceServer[] {
