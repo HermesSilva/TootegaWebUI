@@ -1960,6 +1960,7 @@ export function XApplicationView({
             key={`${customAction.command}#${customAction.nonce}`}
             application={application}
             selectedRow={selectedRowData}
+            tabID={tabID}
             onComplete={(pInitialData) => {
               setCustomAction(null);
               // O que a ação trouxe MANDA sobre o padrão: ela já apurou o caso concreto, e o

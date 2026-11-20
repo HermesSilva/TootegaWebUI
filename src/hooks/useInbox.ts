@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { HubConnectionBuilder, HubConnectionState, LogLevel, type HubConnection } from '@microsoft/signalr';
 import { api, getAccessToken } from '@core/lib/api';
 import { mensagemDeFalha } from '@core/lib/mensagemDeFalha';
+import { avisarMensagemRecebida } from '@core/lib/ouvintesDoInbox';
 import { useAuth } from './useAuth';
 
 /**
@@ -110,6 +111,7 @@ export function useInbox(): {
       if (!ativo || !pMensagem?.id)
         return;
       acrescentar(pMensagem);
+      avisarMensagemRecebida(pMensagem);
       // Confirma o recebimento (Entregue) — o back registra que chegou ao cliente.
       void api.post(`${BASE_MENSAGENS}/${pMensagem.id}/entregue`).catch(() => { /* reentrega depois */ });
     });

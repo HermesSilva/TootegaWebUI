@@ -86,6 +86,12 @@ export interface MolduraDeModal {
   };
   /** As oito alças de redimensionar; renderize-as DENTRO do cartão. Nulo quando não redimensiona. */
   alcasDeRedimensionar: JSX.Element | null;
+  /**
+   * Leva o cartão ao topo da área, centrado na largura, a `pMargem` px da borda de cima — como se o usuário o tivesse
+   * arrastado até lá (o painel do suporte que o atendente tira do caminho, dono 2026-11-19). Medido do cartão como
+   * está: chame depois que ele tiver o tamanho final.
+   */
+  encostarNoTopo: (pMargem?: number) => void;
 }
 
 const ALCAS: { direcao: Direcao; classe: string }[] = [
@@ -349,5 +355,22 @@ export function useMolduraDeModal({
     )
     : null;
 
-  return { ref, alca, alcasDeRedimensionar };
+  const encostarNoTopo = useCallback((pMargem = 8) => {
+    const cartao = ref.current;
+    const area = (cartao?.closest('[data-app-area]') as HTMLElement | null) ?? cartao?.parentElement;
+    if (!cartao || !area)
+      return;
+
+    const a = area.getBoundingClientRect();
+    const c = cartao.getBoundingClientRect();
+    const dx = a.left + (a.width - c.width) / 2 - c.left;
+    const dy = a.top + pMargem - c.top;
+
+    mexido.current = true;
+    deslocamento.current = { x: deslocamento.current.x + dx, y: deslocamento.current.y + dy };
+    cartao.style.transform = `translate(${deslocamento.current.x}px, ${deslocamento.current.y}px)`;
+    aoMudar.current?.({ ...deslocamento.current, ...(tamanho.current ?? {}) });
+  }, [ref]);
+
+  return { ref, alca, alcasDeRedimensionar, encostarNoTopo };
 }
