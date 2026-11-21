@@ -38,7 +38,8 @@ import { XModalShell } from '@core/components/templates/XModalShell';
 import { useMolduraDeModal } from '@core/hooks/useMolduraDeModal';
 import { ZIndexManager } from '@core/lib/zIndexManager';
 import type { XButtonActionComponentProps } from '@core/components/templates/XButtonActionRegistry';
-import { criarCanalDeSuporte, encerrarCanal, entrarNaChamada, sinalizar } from '@core/lib/suporte/canalDeSuporte';
+import { errorEmitter } from '@core/lib/errorEmitter';
+import { criarCanalDeSuporte, ehFalhaDoCanal, encerrarCanal, entrarNaChamada, ligarCanal, sinalizar } from '@core/lib/suporte/canalDeSuporte';
 import { ConexaoDeMidia, pararMidia, pedirMicrofone } from '@core/lib/suporte/conexaoDeMidia';
 import { lerAviso, pontoNoVideo, serializarGesto, type GestoRemoto } from '@core/lib/suporte/controleRemoto';
 import {
@@ -271,13 +272,23 @@ function SessaoDeAtendimento({ modo, selectedRow, tabID, onCancel, onDone }: Ses
         canal.onreconnected(() => void entrarNaChamada(canal, id));
 
         // Entrar na chamada é o que faz quem chamou mandar a oferta: só depois de o microfone estar decidido.
-        await canal.start();
-        await entrarNaChamada(canal, id);
+        await ligarCanal(canal, id);
 
         // Entrou e o servidor não contou que quem chamou está lá: ele não está (ainda, ou saiu).
         if (vivo)
           setUsuarioPresente((pAtual) => pAtual ?? false);
-      } catch {
+      } catch (pErro) {
+        // Falha da API: o motivo já saiu no diálogo de mensagem. Falha do canal de tempo real: ninguém a mostrou, e a
+        // chamada JÁ foi assumida — fechar calado deixaria quem chamou esperando um atendente que não vem.
+        if (ehFalhaDoCanal(pErro))
+          errorEmitter.emit({
+            category: 'exception',
+            title: 'Falha de Conexão',
+            message: `${pErro.message} Sem ele, a tela de quem chamou não chega até você. A chamada já está em seu `
+              + 'nome: recarregue a página e use "Atender a próxima" para voltar a ela, ou encerre-a pelo quadro. Se a '
+              + 'falha se repetir, avise a equipe que administra o sistema.',
+          });
+
         if (vivo)
           cancelar.current();
       }

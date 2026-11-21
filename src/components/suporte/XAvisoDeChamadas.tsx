@@ -21,18 +21,22 @@
  * atendente tem um atendimento em curso, a App de atendimento reabre sozinha nele ("Atender a próxima" devolve o
  * atendimento que já é dele). Só na carga: durante o uso, quem abre a sessão é o atendente.
  *
+ * <b>Conexão que não entra não passa calada</b> (2026-11-21): sem ela o atendente não conta como online, e por isso o
+ * cabeçalho diz "você está offline", com o motivo no hint, e a conexão é tentada de novo a cada releitura.
+ *
  * Quem é atendente não se decide aqui: é quem tem a App "Atendimento de suporte" no próprio menu (o menu
  * já vem podado pelo back). Para todos os outros o componente não conecta nada e não desenha nada.
  */
 
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
-import { Headset } from 'lucide-react';
+import { Headset, TriangleAlert } from 'lucide-react';
+import { HubConnectionState } from '@microsoft/signalr';
 
 import { api } from '@core/lib/api';
 import { useUserMenu } from '@core/hooks/useMenu';
 import { useResolvedorLinkApp } from '@core/hooks/useResolvedorLinkApp';
 import { useTabs } from '@core/hooks/useTabs';
-import { criarCanalDeSuporte, encerrarCanal } from '@core/lib/suporte/canalDeSuporte';
+import { criarCanalDeSuporte, descreverFalhaDoCanal, encerrarCanal } from '@core/lib/suporte/canalDeSuporte';
 import { tocarAvisoDeChamada } from '@core/lib/suporte/toqueDeChamada';
 import {
   APP_DE_ATENDIMENTO, COMANDO_DE_ATENDER, ROTA_DAS_CHAMADAS, type ChamadaDeSuporte, type PendenciasDoSuporte,
@@ -55,6 +59,8 @@ export function XAvisoDeChamadas(): JSX.Element | null {
   const [pendencias, setPendencias] = useState<PendenciasDoSuporte>(SEM_PENDENCIAS);
   // As chamadas que este atendente já viu no aviso (atendeu ou dispensou): não avisam de novo.
   const [vistas, setVistas] = useState<ReadonlySet<string>>(() => new Set());
+  // O motivo de o canal de tempo real estar fora (vazio = conectado, ou ainda conectando).
+  const [falhaDoCanal, setFalhaDoCanal] = useState('');
   const tocada = useRef<string | null>(null);
   // A primeira leitura depois de carregar a página: é nela que um atendimento em curso se reabre sozinho.
   const primeiraLeitura = useRef(true);
@@ -97,18 +103,43 @@ export function XAvisoDeChamadas(): JSX.Element | null {
     }
 
     const hub = criarCanalDeSuporte();
+    let vivo = true;
+
+    // A conexão é a presença do atendente. Não conectou ⇒ ele NÃO conta como online, e precisa saber disso: o aviso
+    // fica no cabeçalho com o motivo, e a conexão é tentada de novo a cada releitura, até entrar.
+    const conectar = (): void => {
+      if (hub.state !== HubConnectionState.Disconnected)
+        return;
+
+      void hub.start().then(
+        () => { if (vivo) setFalhaDoCanal(''); },
+        (pErro: unknown) => { if (vivo) setFalhaDoCanal(descreverFalhaDoCanal(pErro)); });
+    };
 
     hub.on('FilaMudou', () => void contar());
-    hub.onreconnected(() => void contar());
-    void hub.start().catch(() => { /* sem tempo real, a releitura periódica mantém os números */ });
+    hub.onreconnected(() => {
+      setFalhaDoCanal('');
+      void contar();
+    });
+    // As tentativas de reconexão do próprio canal se esgotaram: o atendente saiu da lista de online.
+    hub.onclose((pErro) => {
+      if (vivo)
+        setFalhaDoCanal(descreverFalhaDoCanal(pErro ?? 'a conexão caiu e as tentativas de reconectar se esgotaram'));
+    });
 
+    conectar();
     void contar();
 
-    const releitura = window.setInterval(() => void contar(), RELEITURA_MS);
+    const releitura = window.setInterval(() => {
+      conectar();
+      void contar();
+    }, RELEITURA_MS);
 
     return () => {
+      vivo = false;
       window.clearInterval(releitura);
       void encerrarCanal(hub);
+      setFalhaDoCanal('');
     };
   }, [atende, contar]);
 
@@ -160,8 +191,22 @@ export function XAvisoDeChamadas(): JSX.Element | null {
     />
   );
 
+  // Sem o canal de tempo real o atendente não conta como online: quem chama vê "não há atendente online", e a chamada
+  // nova não toca aqui. Fica dito no cabeçalho, com o motivo no hint, enquanto a conexão não entra.
+  const avisoDeOffline = atende && falhaDoCanal && (
+    <span
+      role="status" data-testid="aviso-suporte-offline"
+      title={`${falhaDoCanal} Enquanto isso, você não aparece como atendente online e não recebe o aviso de chamada nova. `
+        + 'A conexão é tentada de novo a cada 30 segundos.'}
+      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-ui-sm font-semibold whitespace-nowrap text-brand-text-primary bg-brand-surface border border-border"
+    >
+      <TriangleAlert className="w-4 h-4 text-warning" aria-hidden="true" />
+      {'Suporte: você está offline'}
+    </span>
+  );
+
   if (!atende || (pendencias.naFila === 0 && pendencias.noQuadro === 0))
-    return avisoDeChamada || null;
+    return avisoDeChamada || avisoDeOffline ? <>{avisoDeChamada}{avisoDeOffline}</> : null;
 
   const abrir = resolver(APP_DE_ATENDIMENTO);
 
@@ -177,6 +222,7 @@ export function XAvisoDeChamadas(): JSX.Element | null {
   return (
     <>
     {avisoDeChamada}
+    {avisoDeOffline}
     <button
       type="button" onClick={() => abrir?.()} data-testid="aviso-chamadas-suporte"
       title={'Abrir o Atendimento de suporte'}

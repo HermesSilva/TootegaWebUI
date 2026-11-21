@@ -55,7 +55,7 @@ import { api } from '@core/lib/api';
 import { ZIndexManager } from '@core/lib/zIndexManager';
 import { XModalShell } from '@core/components/templates/XModalShell';
 import { useMolduraDeModal } from '@core/hooks/useMolduraDeModal';
-import { criarCanalDeSuporte, encerrarCanal, entrarNaChamada, sinalizar } from '@core/lib/suporte/canalDeSuporte';
+import { criarCanalDeSuporte, ehFalhaDoCanal, encerrarCanal, entrarNaChamada, ligarCanal, sinalizar } from '@core/lib/suporte/canalDeSuporte';
 import { ConexaoDeMidia, pararMidia, pedirMicrofone, pedirTela, superficieCompartilhada } from '@core/lib/suporte/conexaoDeMidia';
 import {
   CapturaPorExtensao, FalhaDaCaptura, navegadorAceitaExtensoes, textoDeLiberacao, verificarExtensao,
@@ -623,8 +623,7 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
         void entrarNaChamada(hub, id).then(() => reler());
     });
 
-    await hub.start();
-    await entrarNaChamada(hub, pChamada.id);
+    await ligarCanal(hub, pChamada.id);
 
     setChamada(pChamada);
     setRestantes(pChamada.segundosRestantes);
@@ -714,10 +713,16 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
       setRetorno(null);
       // A tela vai sozinha pela extensão; sem ela, o painel oferece o botão de compartilhar.
       void compartilhar(false, true);
-    } catch {
-      // O motivo já saiu no diálogo de mensagem (o atendimento pode ter acabado no meio do caminho).
+    } catch (pErro) {
+      // Falha da API: o motivo já saiu no diálogo de mensagem (o atendimento pode ter acabado no meio do caminho).
       limpar();
       setRetorno(null);
+
+      // Falha do canal: ninguém a mostrou ainda. O atendimento segue aberto no servidor, com o atendente esperando.
+      if (ehFalhaDoCanal(pErro))
+        mostrarFalhaDoCanal(`${pErro.message} Sem ele, o atendente não consegue ver a sua tela nem falar com você. `
+          + 'O atendimento continua aberto, com o atendente à espera: recarregue a página e atenda de novo. Se a falha '
+          + 'se repetir, avise a equipe que administra o sistema.');
     } finally {
       setRespondendoRetorno(false);
     }
@@ -747,8 +752,10 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
 
     setAbrindo(true);
 
+    let nova: ChamadaDeSuporte | null = null;
+
     try {
-      const nova = await api.post<ChamadaDeSuporte>(ROTA_DAS_CHAMADAS, { senha, descricao: descricao.trim() });
+      nova = await api.post<ChamadaDeSuporte>(ROTA_DAS_CHAMADAS, { senha, descricao: descricao.trim() });
 
       setSenha('');
 
@@ -760,12 +767,34 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
       }
 
       await entrarNaSessao(nova);
-    } catch {
+    } catch (pErro) {
       // Senha recusada ou servidor fora: o motivo já saiu no diálogo de mensagem. Nada ficou aberto.
       limpar();
+
+      // A chamada abriu, mas o canal de tempo real não conectou: sem ele ninguém atende. Em vez de voltar calada à
+      // senha, deixando a chamada sozinha na fila, a tela a cancela e diz o que houve.
+      if (nova && ehFalhaDoCanal(pErro)) {
+        // Se o cancelamento falhar, o motivo sai no diálogo de mensagem, e a chamada vence sozinha pelo prazo.
+        const cancelada = await api.post<ChamadaDeSuporte>(`${ROTA_DAS_CHAMADAS}/${nova.id}/cancelar`).then(() => true, () => false);
+
+        mostrarFalhaDoCanal(`${pErro.message} Sem ele, nenhum atendente consegue ver a sua tela nem falar com você. `
+          + (cancelada
+            ? 'A chamada foi cancelada, e a sua tela não foi compartilhada com ninguém. '
+            : 'A chamada ficou na fila e sai dela sozinha ao fim do prazo de espera; a sua tela não foi compartilhada com ninguém. ')
+          + 'Recarregue a página e chame de novo. Se a falha se repetir, avise a equipe que administra o sistema.');
+      }
     } finally {
       setAbrindo(false);
     }
+  }
+
+  // O canal de tempo real não conectou: a tela do fim diz o que houve, sem pergunta de avaliação nem de descrição.
+  function mostrarFalhaDoCanal(pTexto: string): void {
+    setChamada(null);
+    setAAvaliar(null);
+    setADescrever(null);
+    setMotivoDoFim(pTexto);
+    setFase('fim');
   }
 
   /**
