@@ -3,6 +3,7 @@ import { HubConnectionBuilder, HubConnectionState, LogLevel, type HubConnection 
 import { api, getAccessToken } from '@core/lib/api';
 import { mensagemDeFalha } from '@core/lib/mensagemDeFalha';
 import { avisarMensagemRecebida } from '@core/lib/ouvintesDoInbox';
+import { urlDoHub } from '@core/lib/urlDoHub';
 import { useAuth } from './useAuth';
 
 /**
@@ -18,8 +19,8 @@ export interface MensagemInbox {
   criacao: string;
 }
 
-// Rota REST do inbox (via SYS) e o hub de tempo real. O hub fica na RAIZ (não sob /api): o SignalR
-// resolve '/hub/mensagens' contra a origem. O token vai pelo accessTokenFactory (query no WebSocket).
+// Rota REST do inbox (via SYS) e o hub de tempo real. O hub fica na RAIZ do host da API (não sob /api): `urlDoHub`
+// o resolve contra a origem da API publicada. O token vai pelo accessTokenFactory (query no WebSocket).
 const BASE_MENSAGENS = '/sys/mensagens';
 const HUB_MENSAGENS = '/hub/mensagens';
 
@@ -102,7 +103,7 @@ export function useInbox(): {
       });
 
     const conexao = new HubConnectionBuilder()
-      .withUrl(HUB_MENSAGENS, { accessTokenFactory: () => getAccessToken() ?? '' })
+      .withUrl(urlDoHub(HUB_MENSAGENS), { accessTokenFactory: () => getAccessToken() ?? '' })
       .withAutomaticReconnect()
       .configureLogging(LogLevel.Warning)
       .build();

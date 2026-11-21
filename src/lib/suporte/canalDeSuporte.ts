@@ -12,12 +12,14 @@
 
 import { HubConnectionBuilder, HubConnectionState, LogLevel, type HubConnection } from '@microsoft/signalr';
 import { getAccessToken } from '@core/lib/api';
+import { urlDoHub } from '@core/lib/urlDoHub';
+
 import { HUB_DE_SUPORTE, type TipoDeRecado } from './tipos';
 
 /** Cria a conexão, ainda parada. O token vai pelo `accessTokenFactory`, como no hub de mensagens. */
 export function criarCanalDeSuporte(): HubConnection {
   return new HubConnectionBuilder()
-    .withUrl(HUB_DE_SUPORTE, { accessTokenFactory: () => getAccessToken() ?? '' })
+    .withUrl(urlDoHub(HUB_DE_SUPORTE), { accessTokenFactory: () => getAccessToken() ?? '' })
     .withAutomaticReconnect()
     .configureLogging(LogLevel.Warning)
     .build();
