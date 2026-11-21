@@ -43,6 +43,12 @@ import { baseDaApp } from '@core/lib/baseDaApp';
 import { getFieldValue } from '@core/lib/fieldAccess';
 import { prepararDadosParaGravar } from '@core/lib/prepararDadosParaGravar';
 import { abreEmLeitura } from '@core/lib/visibility';
+import { dataViewPeloContexto, exportConfigPeloContexto } from '@core/lib/contextoDaConsulta';
+
+// A exportação de uma ação de linha não tem filtro nem ordenação de grade. Constantes, para o diálogo não
+// receber uma lista nova a cada renderização.
+const SEM_FILTROS: XFilterInfo[] = [];
+const SEM_ORDENACAO: XSortInfo[] = [];
 import { XButtonBar } from './XButtonBar';
 import { XFilter } from './XFilter';
 import { ZIndexManager } from '@core/lib/zIndexManager';
@@ -588,6 +594,10 @@ export function XApplicationView({
       /** O que o `loadEndpoint` da ação devolveu para esta abertura (os custos já lançados na nota). */
       iniciais?: Record<string, unknown>;
     } | null>(null);
+  // Ação de linha que EXPORTA pelo diálogo de exportação (`exportConfig`): a ação, a linha e o total de
+  // registros que a linha declara (`exportCountField`).
+  const [rowActionExport, setRowActionExport] = useState<
+    { action: XRowAction; rowID: string; total: number } | null>(null);
   const [pendingRowAction, setPendingRowAction] = useState<
     { action: XRowAction; rowID: string; corpo: Record<string, unknown> } | null>(null);
   const [rowActionResult, setRowActionResult] = useState<string | null>(null);
@@ -1286,6 +1296,16 @@ export function XApplicationView({
       return;
     }
 
+    // EXPORTA pelo diálogo de exportação: o modelo traz a configuração (formatos, colunas), e a linha, o total.
+    if (pAction.exportConfig) {
+      const linha = data.find(
+        (r: Record<string, unknown>) => String(getFieldValue(r, application.dataView.keyField)) === pRowID);
+      const total = Number(getFieldValue(linha ?? null, pAction.exportCountField ?? '') ?? 0);
+
+      setRowActionExport({ action: pAction, rowID: pRowID, total: Number.isFinite(total) ? total : 0 });
+      return;
+    }
+
     if ((pAction.fields?.length ?? 0) > 0) {
       // VALORES INICIAIS do back (loadEndpoint), também na grade PRINCIPAL (dono, 2026-11-08: os custos da
       // nota abrem com o já lançado e com os itens). Antes só a grade de detalhe o honrava. `{id}` e
@@ -1313,7 +1333,7 @@ export function XApplicationView({
     }
 
     void executarRowAction(pAction, pRowID);
-  }, [executarRowAction, appX]);
+  }, [executarRowAction, appX, data, application.dataView.keyField]);
 
   // Ação por linha de uma GRADE EMBUTIDA (o "Baixar" na linha da parcela, dentro do form de título):
   // a "linha" é a parcela, e o {id} do endpoint sai de `endpointKeyField` sobre ela (não da KeyField da
@@ -1542,6 +1562,44 @@ export function XApplicationView({
     return Math.ceil(totalCount / state.pageSize);
   }, [totalCount, state.pageSize]);
 
+  /**
+   * O CONTEXTO da consulta (`dataView.contextEndpoint`): a configuração da empresa que liga colunas da grade
+   * principal (`visibleWhenField`). Buscado quando a App abre. Até chegar — e se a busca falhar, caso em que o
+   * `api.ts` já levou ao usuário a mensagem que nomeia a rota e o status — as colunas condicionais ficam fora:
+   * mostrar e depois tirar uma coluna que a empresa não usa seria o pior dos dois comportamentos.
+   */
+  const contextoDaConsultaEndpoint = application.dataView.contextEndpoint || '';
+  const [contextoDaConsulta, setContextoDaConsulta] = useState<Record<string, unknown>>({});
+
+  useEffect(() => {
+    if (!contextoDaConsultaEndpoint)
+      return;
+
+    let vigente = true;
+
+    api.get<Record<string, unknown>>(contextoDaConsultaEndpoint)
+      .then((pContexto) => {
+        if (vigente)
+          setContextoDaConsulta(pContexto ?? {});
+      })
+      .catch(() => {
+        if (vigente)
+          setContextoDaConsulta({});
+      });
+
+    return () => {
+      vigente = false;
+    };
+  }, [contextoDaConsultaEndpoint]);
+
+  const dataViewDaGrade = useMemo(
+    () => dataViewPeloContexto(application.dataView, contextoDaConsulta),
+    [application.dataView, contextoDaConsulta]);
+
+  const exportConfigDaGrade = useMemo(
+    () => exportConfigPeloContexto(application.exportConfig, application.dataView, contextoDaConsulta),
+    [application.exportConfig, application.dataView, contextoDaConsulta]);
+
   const handleExport = useCallback(async (pRequest: XExportRequest) => {
     setIsExporting(true);
 
@@ -1581,6 +1639,43 @@ export function XApplicationView({
 
   const handleExportCancel = useCallback(() => {
     setIsExportDialogOpen(false);
+  }, []);
+
+  /**
+   * Exportação de uma AÇÃO DE LINHA (`exportConfig`): o mesmo diálogo, mas o pedido vai ao endpoint da ação,
+   * com `{id}` = a linha. A falha já sai pelo diálogo global da api; o diálogo de exportação fica aberto para
+   * o usuário corrigir a escolha e tentar de novo.
+   */
+  const handleRowActionExport = useCallback(async (pRequest: XExportRequest) => {
+    const pendente = rowActionExport;
+    if (!pendente)
+      return;
+
+    setIsExporting(true);
+
+    try {
+      const { blob, filename } = await api.downloadBlob(
+        pendente.action.endpoint.replace('{id}', pendente.rowID), pRequest);
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      setRowActionExport(null);
+    } catch (error) {
+      console.error('Row action export error:', error);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [rowActionExport]);
+
+  const handleRowActionExportCancel = useCallback(() => {
+    setRowActionExport(null);
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -1712,7 +1807,7 @@ export function XApplicationView({
       {/* Data View */}
       <div data-tour="data-grid" className="flex-1 min-h-0 overflow-auto">
         <XDataView
-          dataView={application.dataView}
+          dataView={dataViewDaGrade}
           data={data}
           isLoading={isReallyLoading}
           isFetching={isFetchingWithData}
@@ -1892,7 +1987,7 @@ export function XApplicationView({
       {/* Export Dialog - Rendered within Tab scope */}
       {application.canExport && (
         <XExportDialog
-          config={application.exportConfig}
+          config={exportConfigDaGrade}
           isOpen={isExportDialogOpen}
           isExporting={isExporting}
           totalRecords={totalCount}
@@ -1903,6 +1998,23 @@ export function XApplicationView({
           pageSize={state.pageSize}
           onExport={handleExport}
           onCancel={handleExportCancel}
+        />
+      )}
+
+      {/* O mesmo diálogo, para a AÇÃO DE LINHA que exporta um registro (os itens de um documento). */}
+      {rowActionExport?.action.exportConfig && (
+        <XExportDialog
+          config={rowActionExport.action.exportConfig}
+          isOpen
+          isExporting={isExporting}
+          totalRecords={rowActionExport.total}
+          totalPages={Math.max(1, Math.ceil(rowActionExport.total / state.pageSize))}
+          currentFilters={SEM_FILTROS}
+          currentSort={SEM_ORDENACAO}
+          logicalOperator={XFilterLogicalOperator.And}
+          pageSize={state.pageSize}
+          onExport={handleRowActionExport}
+          onCancel={handleRowActionExportCancel}
         />
       )}
 

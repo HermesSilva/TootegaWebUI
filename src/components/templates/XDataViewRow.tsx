@@ -417,7 +417,7 @@ export function XDataViewRow({
         <td
           key={column.fieldName}
           className={`
-            px-3 align-middle text-ui truncate
+            px-3 align-middle text-ui ${column.wrapText ? 'whitespace-normal break-words' : 'truncate'}
             ${gridAlignmentClass(column.alignment, column.dataType)}
           `}
           style={{

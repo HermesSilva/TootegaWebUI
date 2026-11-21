@@ -430,6 +430,17 @@ export interface XDataField extends XModel {
   isResizable: boolean;
   isFixed: boolean;
   nullText: string;
+  /**
+   * Campo do CONTEXTO da consulta (`dataView.contextEndpoint`) que decide se a coluna EXISTE na grade principal:
+   * verdadeiro ⇒ aparece; falso ou ausente ⇒ some, com cabeçalho e tudo, e sai do diálogo de exportação.
+   * Vazio ⇒ sempre visível. Mesmo contrato do `visibleWhenField` da grade de itens.
+   */
+  visibleWhenField?: string;
+  /**
+   * O texto da coluna aparece INTEIRO, quebrando em mais de uma linha, em vez de cortado com reticências.
+   * Ausente/falso ⇒ a célula de uma linha só.
+   */
+  wrapText?: boolean;
 }
 
 // ============================================================================
@@ -1067,6 +1078,11 @@ export interface XDataView extends XModel {
   pagination: XPagination;
   dataEndpoint: string;
   keyField: string;
+  /**
+   * GET do CONTEXTO da consulta: valores que não são de nenhuma linha, mas mudam como a grade se apresenta — a
+   * configuração da empresa que liga uma coluna (`XDataField.visibleWhenField`). Buscado quando a App abre.
+   */
+  contextEndpoint?: string;
   showHeader: boolean;
   showFooter: boolean;
   showBorder: boolean;
@@ -1100,6 +1116,14 @@ export interface XRowAction extends XModel {
   title: string;
   icon: string;
   endpoint: string;
+  /**
+   * A ação EXPORTA o registro da linha pelo diálogo de exportação (formato, registros, orientação, colunas):
+   * o motor abre o `XExportDialog` com esta configuração e posta o pedido no `endpoint`, baixando o arquivo.
+   * Ausente/nula ⇒ a ação não exporta por diálogo.
+   */
+  exportConfig?: XExportConfig | null;
+  /** Campo da linha com o total de registros da exportação (os itens do documento). */
+  exportCountField?: string;
   /**
    * A ação LEVA O AppX ao nível com esta chave, com a linha como registro (o "Abrir" do repositório na aba Código).
    * Nada se posta; fora de um AppX, ou com o nível podado, o botão não aparece.
