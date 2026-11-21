@@ -4,8 +4,9 @@
  *
  * <b>O que isto alcança e o que não alcança.</b> Evento criado por script não é confiável para o
  * navegador (`isTrusted = false`): ele chega aos componentes da página — clique, foco, digitação,
- * rolagem —, mas não abre o seletor de arquivos, não dispara download, não mexe na área de transferência
- * nem em diálogo do navegador. O controle vale para o que é desta aplicação, e só.
+ * rolagem, passar o ponteiro (entrar e sair de cada elemento) —, mas não abre o seletor de arquivos, não dispara
+ * download, não mexe na área de transferência nem em diálogo do navegador, e não liga o `:hover` do CSS nem o hint
+ * nativo do `title`. O controle vale para o que é desta aplicação, e só.
  *
  * <b>Três travas, todas binárias:</b>
  * 1. campo de SENHA não recebe digitação remota — senha é de quem a conhece;
@@ -37,7 +38,13 @@ const FOCAVEIS = 'a[href], button, input, select, textarea, [tabindex], [content
 const TABULAVEIS = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), '
   + 'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-const EVENTOS_DO_USUARIO = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'] as const;
+/**
+ * Os campos de data e hora do navegador e quantos dígitos completam cada um, na ordem em que se digita em português:
+ * dia, mês, ano (8); hora e minuto (4); os dois juntos (12); mês e ano (6).
+ */
+const DIGITOS_DO_CAMPO_DE_DATA: Record<string, number> = { date: 8, time: 4, 'datetime-local': 12, month: 6 };
+
+const EVENTOS_DO_USUARIO =['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'] as const;
 
 
 export class ReprodutorDeGestos {
@@ -47,6 +54,10 @@ export class ReprodutorDeGestos {
   private readonly _EhDoUsuario: (pEvento: Event) => boolean;
   private _UltimoGestoDoUsuario = Number.NEGATIVE_INFINITY;
   private _Pressionado: Element | null = null;
+  // O elemento sob o ponteiro do atendente no último gesto: é a diferença para o de agora que vira entrar e sair.
+  private _Sobre: Element | null = null;
+  // Os dígitos que o atendente já digitou num campo de data, à espera dos que faltam para a data ficar inteira.
+  private _Digitos: { campo: HTMLInputElement; texto: string } | null = null;
   private _UltimoClique: { alvo: Element; instante: number } | null = null;
   private _Superficie: SuperficieCompartilhada | undefined;
   private _Quadro: () => QuadroDoVideo | null = () => null;
@@ -90,6 +101,9 @@ export class ReprodutorDeGestos {
 
   /** Para de escutar os gestos do usuário. Chamar ao fim do atendimento. */
   parar(): void {
+    // O atendimento acabou com o ponteiro sobre algo: sai dele, para não ficar hint nem menu aberto por quem já foi.
+    this._Passar(null, 0, 0);
+
     for (const evento of EVENTOS_DO_USUARIO)
       this._Documento.removeEventListener(evento, this._MarcarGestoDoUsuario, { capture: true });
   }
@@ -115,8 +129,14 @@ export class ReprodutorDeGestos {
         return pGesto.t === 'mover' ? 'ignorado' : 'usuario';
 
       const alvo = this._Documento.elementFromPoint(ponto.x, ponto.y);
-      if (!alvo || alvo.closest(`[${ATRIBUTO_DO_SUPORTE}]`))
+      if (!alvo || alvo.closest(`[${ATRIBUTO_DO_SUPORTE}]`)) {
+        // O ponteiro saiu do que é da aplicação: o que estava sob ele deixa de estar.
+        this._Passar(null, ponto.x, ponto.y);
         return 'ignorado';
+      }
+
+      // Antes do gesto em si, o ponteiro "chega" ao elemento: é o que abre o hint e o menu que aparecem ao passar.
+      this._Passar(alvo, ponto.x, ponto.y);
 
       switch (pGesto.t) {
         case 'mover':
@@ -155,6 +175,59 @@ export class ReprodutorDeGestos {
       pAlvo.dispatchEvent(new PointerEvent(pPonteiro, { ...base, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
 
     return pAlvo.dispatchEvent(new MouseEvent(pMouse, base));
+  }
+
+  /**
+   * O ponteiro do atendente passou de um elemento a outro: avisa a página como o navegador avisaria — sai do
+   * anterior (`mouseout`, e `mouseleave` em cada ancestral que ficou para trás) e entra no novo (`mouseover`, e
+   * `mouseenter` em cada ancestral em que ainda não estava). É disso que os componentes tiram o "passar o mouse":
+   * hint, menu que abre ao passar, realce de linha feito por evento. Sem isto só chegava o `mousemove`, e nada abria.
+   *
+   * O que NÃO se alcança: o `:hover` do CSS e o hint nativo do atributo `title`. Os dois são do navegador, que só os
+   * liga ao ponteiro de verdade; evento criado pela página não os aciona.
+   */
+  private _Passar(pNovo: Element | null, pX: number, pY: number): void {
+    // O elemento anterior pode ter saído da página (a lista redesenhou): aí não há de onde sair.
+    const anterior = this._Sobre?.isConnected ? this._Sobre : null;
+
+    this._Sobre = pNovo;
+
+    if (anterior === pNovo)
+      return;
+
+    if (anterior) {
+      this._Transicao(anterior, 'pointerout', 'mouseout', true, pNovo, pX, pY);
+
+      for (let elemento: Element | null = anterior; elemento && !(pNovo && elemento.contains(pNovo)); elemento = elemento.parentElement)
+        this._Transicao(elemento, 'pointerleave', 'mouseleave', false, pNovo, pX, pY);
+    }
+
+    if (pNovo) {
+      this._Transicao(pNovo, 'pointerover', 'mouseover', true, anterior, pX, pY);
+
+      const entrados: Element[] = [];
+
+      for (let elemento: Element | null = pNovo; elemento && !(anterior && elemento.contains(anterior)); elemento = elemento.parentElement)
+        entrados.push(elemento);
+
+      // De fora para dentro, como o navegador faz.
+      for (const elemento of entrados.reverse())
+        this._Transicao(elemento, 'pointerenter', 'mouseenter', false, anterior, pX, pY);
+    }
+  }
+
+  private _Transicao(
+    pAlvo: Element, pPonteiro: string, pMouse: string, pBorbulha: boolean, pOutro: Element | null, pX: number, pY: number
+  ): void {
+    const base = {
+      bubbles: pBorbulha, cancelable: pBorbulha, composed: pBorbulha,
+      clientX: pX, clientY: pY, button: 0, buttons: 0, relatedTarget: pOutro,
+    };
+
+    if (typeof PointerEvent === 'function')
+      pAlvo.dispatchEvent(new PointerEvent(pPonteiro, { ...base, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+
+    pAlvo.dispatchEvent(new MouseEvent(pMouse, base));
   }
 
   private _Pressionar(pAlvo: Element, pX: number, pY: number, pBotao: number): DesfechoDoGesto {
@@ -198,6 +271,17 @@ export class ReprodutorDeGestos {
       return 'aplicado';
 
     pAlvo.dispatchEvent(new MouseEvent('click', { ...base, detail: 1 }));
+
+    // Clique num campo de data ou hora: pede ao navegador o calendário dele (dono, 2026-11-21). O navegador só o abre
+    // se a aba teve um gesto recente do próprio usuário; sem isso ele recusa, e resta ao atendente digitar a data. E o
+    // calendário, aberto, é do navegador: quem escolhe o dia nele é o usuário, não o atendente.
+    if (pAlvo instanceof HTMLInputElement && pAlvo.type in DIGITOS_DO_CAMPO_DE_DATA && !pAlvo.readOnly && !pAlvo.disabled) {
+      try {
+        pAlvo.showPicker?.();
+      } catch {
+        // Recusado pelo navegador (sem gesto do usuário): o campo fica em foco, pronto para a digitação.
+      }
+    }
 
     const agora = this._Agora();
     const anterior = this._UltimoClique;
@@ -289,10 +373,90 @@ export class ReprodutorDeGestos {
       return;
     }
 
-    if (ehCampoDeEscrita(pAlvo) && !pAlvo.readOnly && !pAlvo.disabled)
+    if (pAlvo instanceof HTMLInputElement && pAlvo.type in DIGITOS_DO_CAMPO_DE_DATA) {
+      if (!pAlvo.readOnly && !pAlvo.disabled)
+        this._EscreverData(pAlvo, pGesto);
+    } else if (ehCampoDeEscrita(pAlvo) && !pAlvo.readOnly && !pAlvo.disabled)
       this._Escrever(pAlvo, pGesto);
     else if (pAlvo instanceof HTMLElement && pAlvo.isContentEditable && teclaEscreve(pGesto))
       this._Documento.execCommand?.('insertText', false, pGesto.k);
+  }
+
+  /**
+   * Digitação num campo de data ou hora do navegador (`date`, `time`, `datetime-local`, `month`). O valor desses
+   * campos só aceita a data INTEIRA, no formato da máquina — escrever caractere a caractere, como num campo de texto,
+   * apagava o campo a cada tecla. E o calendário deles é do navegador: não abre por evento criado na página, nem
+   * aparece no DOM para o atendente clicar. Então o atendente DIGITA: os dígitos se acumulam na ordem em que se
+   * escreve em português (dia, mês, ano, hora, minuto) e, completos, viram o valor do campo. Barras, dois-pontos e
+   * espaço são aceitos e ignorados. Backspace desfaz o último dígito; sem dígito pendente, limpa o campo.
+   */
+  private _EscreverData(pCampo: HTMLInputElement, pGesto: { k: string; ctrl: boolean; alt: boolean }): void {
+    if (pGesto.ctrl || pGesto.alt)
+      return;
+
+    if (this._Digitos?.campo !== pCampo)
+      this._Digitos = { campo: pCampo, texto: '' };
+
+    const digitos = this._Digitos;
+
+    if (pGesto.k === 'Backspace' || pGesto.k === 'Delete') {
+      if (digitos.texto)
+        digitos.texto = digitos.texto.slice(0, -1);
+      else if (pCampo.value)
+        this._DefinirValor(pCampo, '');
+
+      return;
+    }
+
+    if (!/^\d$/.test(pGesto.k))
+      return;
+
+    digitos.texto += pGesto.k;
+
+    if (digitos.texto.length < DIGITOS_DO_CAMPO_DE_DATA[pCampo.type])
+      return;
+
+    const d = digitos.texto;
+
+    digitos.texto = '';
+
+    // Data que não existe (31/02) o navegador recusa: o campo fica como estava, e os dígitos recomeçam.
+    switch (pCampo.type) {
+      case 'date':
+        this._DefinirValor(pCampo, `${d.slice(4, 8)}-${d.slice(2, 4)}-${d.slice(0, 2)}`, true);
+        break;
+      case 'datetime-local':
+        this._DefinirValor(pCampo, `${d.slice(4, 8)}-${d.slice(2, 4)}-${d.slice(0, 2)}T${d.slice(8, 10)}:${d.slice(10, 12)}`, true);
+        break;
+      case 'month':
+        this._DefinirValor(pCampo, `${d.slice(2, 6)}-${d.slice(0, 2)}`, true);
+        break;
+      default:
+        this._DefinirValor(pCampo, `${d.slice(0, 2)}:${d.slice(2, 4)}`, true);
+    }
+  }
+
+  // Põe o valor pelo setter NATIVO (o React guarda o dele no elemento) e avisa a página. Com `pSoSeAceito`, o valor
+  // que o navegador recusa (o campo ficaria vazio) não é aplicado.
+  private _DefinirValor(pCampo: HTMLInputElement, pValor: string, pSoSeAceito = false): void {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    const anterior = pCampo.value;
+    const definir = (pTexto: string): void => {
+      if (setter)
+        setter.call(pCampo, pTexto);
+      else
+        pCampo.value = pTexto;
+    };
+
+    definir(pValor);
+
+    if (pSoSeAceito && pCampo.value !== pValor) {
+      definir(anterior);
+      return;
+    }
+
+    pCampo.dispatchEvent(new Event('input', { bubbles: true }));
+    pCampo.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   private _Escrever(pCampo: CampoDeEscrita, pGesto: { k: string; ctrl: boolean; alt: boolean }): void {

@@ -52,7 +52,6 @@ import { CheckCircle, Download, GripVertical, Headset, Loader2, Mic, MicOff, Mon
 import type { HubConnection } from '@microsoft/signalr';
 
 import { api } from '@core/lib/api';
-import { ZIndexManager } from '@core/lib/zIndexManager';
 import { XModalShell } from '@core/components/templates/XModalShell';
 import { useMolduraDeModal } from '@core/hooks/useMolduraDeModal';
 import { criarCanalDeSuporte, ehFalhaDoCanal, encerrarCanal, entrarNaChamada, ligarCanal, sinalizar } from '@core/lib/suporte/canalDeSuporte';
@@ -101,6 +100,14 @@ const MOTIVO_DO_FIM: Record<string, string> = {
     + 'do suporte. A sua tela não foi compartilhada com ninguém. Assim que um atendente vir o chamado, ele retorna: você '
     + 'recebe um aviso no sino e, ao abrir "Chamar suporte" de novo, entra direto no atendimento.',
 };
+
+/**
+ * A camada da janela de controle, do ponteiro do atendente e do cursor virtual: acima de TUDO o que a aplicação abre.
+ * A janela é o que o usuário tem para parar de compartilhar e encerrar; não pode ficar atrás de nada. Antes ela pegava
+ * um número do `ZIndexManager` ao montar (na carga da página), e tudo o que abria depois — aba, modal, lista — ganhava
+ * número maior e passava por cima dela (2026-11-21). O contador do gerenciador sobe de 1000 e nunca chega aqui.
+ */
+const CAMADA_DO_SUPORTE = 2_000_000_000;
 
 /** Prazo de espera mostrado enquanto o servidor não disse o dele. */
 const MINUTOS_DE_ESPERA_PADRAO = 5;
@@ -176,7 +183,7 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
   // O chamado que foi ao quadro sem descrição: a tela do fim pede uma.
   const [aDescrever, setADescrever] = useState<string | null>(null);
   const [descrevendo, setDescrevendo] = useState(false);
-  const [zIndex] = useState(() => ZIndexManager.next());
+  const zIndex = CAMADA_DO_SUPORTE;
 
   // O que vive fora do ciclo de render: conexões, mídias e o que os ouvintes do hub precisam ler "agora".
   const canal = useRef<HubConnection | null>(null);
