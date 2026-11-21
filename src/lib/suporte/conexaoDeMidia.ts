@@ -26,6 +26,8 @@ import type { TipoDeRecado } from './tipos';
 
 export interface OpcoesDaConexaoDeMidia {
   servidores: RTCIceServer[];
+  /** `relay` = a mídia só passa pelo servidor TURN, sem tentar a ligação direta. Ausente = `all`. */
+  politica?: RTCIceTransportPolicy;
   /** Manda um recado da negociação à outra ponta (pelo hub). */
   enviarRecado: (pTipo: TipoDeRecado, pDados: string) => void;
   /** A mídia da outra ponta chegou (ou ganhou mais uma faixa). */
@@ -75,7 +77,10 @@ export class ConexaoDeMidia {
 
   constructor(pOpcoes: OpcoesDaConexaoDeMidia) {
     this._Opcoes = pOpcoes;
-    this._Conexao = new RTCPeerConnection({ iceServers: pOpcoes.servidores });
+    this._Conexao = new RTCPeerConnection({
+      iceServers: pOpcoes.servidores,
+      iceTransportPolicy: pOpcoes.politica ?? 'all',
+    });
 
     this._Conexao.onicecandidate = (pEvento) => {
       if (pEvento.candidate)

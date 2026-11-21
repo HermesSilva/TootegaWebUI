@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   lerAviso, lerGesto, lerPedido,pontoNaJanela, pontoNoVideo, serializarGesto, teclaEscreve, textoAposTecla,
 } from '@core/lib/suporte/controleRemoto';
-import { formatarDuracao, formatarEspera, formatarEstimativa, servidoresDoNavegador } from '@core/lib/suporte/tipos';
+import {
+  formatarDuracao, formatarEspera, formatarEstimativa, politicaDoNavegador, servidoresDoNavegador,
+} from '@core/lib/suporte/tipos';
 
 /**
  * A parte pura do controle remoto do suporte: a conta que leva o ponteiro do atendente, sobre o vídeo, a
@@ -208,5 +210,18 @@ describe('formatarEspera e servidoresDoNavegador', () => {
       { urls: ['stun:turn.exemplo.teste:3478'] },
       { urls: ['turn:turn.exemplo.teste:3478?transport=udp'], username: '1735689600:abc', credential: 'segredo-derivado' },
     ]);
+  });
+
+  it('só relay quando o back manda; nos demais casos o navegador tenta a ligação direta', () => {
+    const turns = { urls: ['turns:turn.exemplo.teste:41123?transport=tcp'], username: 'u', credential: 'c' };
+
+    expect(politicaDoNavegador([{ ...turns, soRelay: true }])).toBe('relay');
+    expect(politicaDoNavegador([{ ...turns, soRelay: false }])).toBe('all');
+    expect(politicaDoNavegador([turns])).toBe('all');
+    expect(politicaDoNavegador([])).toBe('all');
+    // Servidor sem endereço é descartado por `servidoresDoNavegador`: não pode sozinho tirar a ligação direta.
+    expect(politicaDoNavegador([{ urls: [], username: '', credential: '', soRelay: true }])).toBe('all');
+    // O marcador é do back e não vai ao navegador: `RTCIceServer` não o conhece.
+    expect(servidoresDoNavegador([{ ...turns, soRelay: true }])).toEqual([turns]);
   });
 });

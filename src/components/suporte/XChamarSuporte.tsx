@@ -66,7 +66,7 @@ import { ehCampoDeEscrita, posicaoDoCursor } from '@core/lib/suporte/cursorVirtu
 import { ATRIBUTO_DO_SUPORTE, ReprodutorDeGestos } from '@core/lib/suporte/reproducaoDeGesto';
 import {
   CHAVE_DA_SESSAO_DE_SUPORTE, REFERENCIA_DO_RETORNO, ROTA_DAS_CHAMADAS, formatarEspera, formatarEstimativa,
-  servidoresDoNavegador, type ChamadaDeSuporte, type DisponibilidadeDoSuporte, type ServidorICE, type TipoDeRecado,
+  politicaDoNavegador, servidoresDoNavegador, type ChamadaDeSuporte, type DisponibilidadeDoSuporte, type ServidorICE, type TipoDeRecado,
 } from '@core/lib/suporte/tipos';
 import { ouvirMensagens } from '@core/lib/ouvintesDoInbox';
 
@@ -306,6 +306,7 @@ export function XChamarSuporte({ aberto, aoFechar }: XChamarSuporteProps): JSX.E
 
       const conexao = new ConexaoDeMidia({
         servidores: servidoresDoNavegador(servidores),
+        politica: politicaDoNavegador(servidores),
         enviarRecado: (pTipo, pDados) => sinalizar(hub, atual.id, pTipo, pDados),
         aoReceberMidia: (pRemota) => {
           if (audio.current)

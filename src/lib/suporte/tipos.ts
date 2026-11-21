@@ -73,6 +73,8 @@ export interface ServidorICE {
   urls: string[];
   username: string;
   credential: string;
+  /** O back manda usar SOMENTE este servidor como caminho da mídia (TURN atrás do proxy). */
+  soRelay?: boolean;
 }
 
 /** Tipos de recado da negociação que o hub repassa de uma ponta à outra. */
@@ -104,6 +106,15 @@ export function servidoresDoNavegador(pServidores: ServidorICE[]): RTCIceServer[
     .map((pServidor) => pServidor.username
       ? { urls: pServidor.urls, username: pServidor.username, credential: pServidor.credential }
       : { urls: pServidor.urls });
+}
+
+/**
+ * A política de transporte da chamada: `relay` quando o back marca algum servidor como caminho obrigatório
+ * (o TURN fica atrás do proxy e as portas de relay não são públicas, então a ligação direta não fecharia);
+ * `all` nos demais casos, em que o navegador tenta a ligação direta antes do relay.
+ */
+export function politicaDoNavegador(pServidores: ServidorICE[]): RTCIceTransportPolicy {
+  return pServidores.some((pServidor) => pServidor.soRelay === true && pServidor.urls.length > 0) ? 'relay' : 'all';
 }
 
 /** `mm:ss` do contador de espera. Negativo e fração viram zero e inteiro. */

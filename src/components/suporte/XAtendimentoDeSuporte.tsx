@@ -42,7 +42,7 @@ import { criarCanalDeSuporte, encerrarCanal, entrarNaChamada, sinalizar } from '
 import { ConexaoDeMidia, pararMidia, pedirMicrofone } from '@core/lib/suporte/conexaoDeMidia';
 import { lerAviso, pontoNoVideo, serializarGesto, type GestoRemoto } from '@core/lib/suporte/controleRemoto';
 import {
-  ROTA_DAS_CHAMADAS, formatarDuracao, servidoresDoNavegador,
+  ROTA_DAS_CHAMADAS, formatarDuracao, politicaDoNavegador, servidoresDoNavegador,
   type ChamadaDeSuporte, type ServidorICE, type TipoDeRecado,
 } from '@core/lib/suporte/tipos';
 
@@ -184,6 +184,7 @@ function SessaoDeAtendimento({ modo, selectedRow, tabID, onCancel, onDone }: Ses
 
         const conexao = new ConexaoDeMidia({
           servidores: servidoresDoNavegador(servidores),
+          politica: politicaDoNavegador(servidores),
           enviarRecado: (pT, pD) => sinalizar(canal, id, pT, pD),
           aoReceberMidia: (pRemota) => {
             if (video.current)
