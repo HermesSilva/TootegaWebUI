@@ -22,7 +22,7 @@ import type { XEditorProps } from './XEditor';
 import { XEditorLabel } from './XEditorLabel';
 import { XItemPickerDialog } from './XItemPickerDialog';
 import { XRecordPickerDialog } from './XRecordPickerDialog';
-import { CLASSE_TEXTO_OCULTO, FORMATO_DATA, XPlaceholderDeData } from './XPlaceholderDeData';
+import { XCampoDeData } from './XCampoDeData';
 import { XCurrencyCell } from './XCurrencyCell';
 import { useCepLookup } from '@core/hooks/useCepLookup';
 import type { XUIGridColumn } from '@core/types';
@@ -150,7 +150,7 @@ function novaLinha(pColunas: XUIGridColumn[]): Row {
   return row;
 }
 
-/** Data ISO (o back serializa DateTime como ISO) → `yyyy-MM-dd`, que é o que o input date aceita. */
+/** Data ISO (o back serializa DateTime como ISO) → `yyyy-MM-dd`, que é o que o campo de data recebe. */
 function paraDataInput(pValor: unknown): string {
   const texto = String(pValor ?? '');
   if (!texto || texto.startsWith('0001-01-01')) return '';
@@ -732,18 +732,12 @@ export function XItemsGridEditor({ editor, value, onChange, disabled, onGridRowA
     if (pColuna.editorType === 'date') {
       const dataDaCelula = paraDataInput(valor);
 
+      // O mesmo campo de data dos editores (dd/mm/aaaa e o calendário do sistema), com as classes da célula.
       return (
-        <span className="relative block">
-          <input
-            type="date"
-            value={dataDaCelula}
-            disabled={celTravada}
-            onChange={(e) => atualizar(pIndice, pColuna.fieldName, e.target.value)}
-            className={`peer ${cellClassOf(celTravada)} ${dataDaCelula === '' ? CLASSE_TEXTO_OCULTO : ''}`}
-          />
-          {/* Mesmo placeholder do editor de data (dd/mm/aaaa) — a célula não fala outra língua. */}
-          <XPlaceholderDeData visivel={dataDaCelula === ''} texto={FORMATO_DATA} recuo="left-2" />
-        </span>
+        <XCampoDeData
+          tipo="data" valor={dataDaCelula} desabilitado={celTravada} classeDaCelula={cellClassOf(celTravada)}
+          aoMudar={(pData) => atualizar(pIndice, pColuna.fieldName, pData)}
+        />
       );
     }
 

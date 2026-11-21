@@ -1,16 +1,16 @@
 /**
  * XTimeEditor - Editor de Hora
  * 
- * Campo de hora com:
- * - Input nativo type="time" para melhor UX
- * - Suporte a hora mínima e máxima
+ * Campo de hora do motor (`XCampoDeData`): digitação com máscara `hh:mm` e escolha de hora e minuto do sistema, com
+ * mínimo e máximo. O valor entregue ao formulário é `hh:mm`, ou nulo quando o campo está vazio.
  */
 
-import { useCallback, useMemo, type JSX, type ChangeEvent } from 'react';
+import { useCallback, useMemo, type JSX } from 'react';
 import { Clock, X } from 'lucide-react';
 import type { XDataEditor } from '@core/types';
 import { XEditorLabel } from './XEditorLabel';
 import { XReadOnlyValue } from './XReadOnlyValue';
+import { XCampoDeData } from './XCampoDeData';
 import { formatTime, getDateFormat } from '@core/lib';
 
 // ============================================================================
@@ -105,12 +105,8 @@ export function XTimeEditor({
   // Handlers
   // ---------------------------------------------------------------------------
 
-  const handleChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
-
-    // Propaga como string HH:mm ou null
-    onChange(newValue || null);
-  }, [onChange]);
+  // Propaga como string HH:mm ou null
+  const handleChange = useCallback((pValor: string) => onChange(pValor || null), [onChange]);
 
   const handleRevert = useCallback(() => {
     const originalTime = toTimeString(originalValue);
@@ -149,43 +145,23 @@ export function XTimeEditor({
       {/* Label */}
       <XEditorLabel id={editor.id} title={editor.title} isRequired={editorModel.isRequired} />
 
-      {/* Input Container */}
-      <div className="relative">
-        {/* Clock Icon */}
-        {clockIcon}
-
-        {/* Input */}
-        <input
-          id={editor.id}
-          type="time"
-          value={inputValue}
-          onChange={handleChange}
-          min={minTime}
-          max={maxTime}
-          disabled={disabled || editorModel.isReadOnly}
-          className={`
-            w-full h-editor pl-10 ${showRevertButton ? 'pr-8' : 'pr-4'}
-            text-ui rounded-lg border
-            bg-brand-surface text-brand-text-primary
-            focus:outline-none focus:ring-2 focus:ring-brand-primary focus:border-transparent
-            disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-muted-bg
-            ${error ? 'border-danger focus:ring-danger' : 'border-border'}
-          `}
-        />
-
+      <XCampoDeData
+        tipo="hora" id={editor.id} valor={inputValue} aoMudar={handleChange}
+        minimo={minTime} maximo={maxTime} comErro={!!error} comBotaoADireita={showRevertButton}
+      >
         {/* Revert Button */}
         {showRevertButton && (
           <button
             type="button"
             onClick={handleRevert}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-hover rounded"
+            className="absolute right-9 top-1/2 -translate-y-1/2 p-1 hover:bg-hover rounded"
             tabIndex={-1}
             title={'Desfazer alteração'}
           >
             <X className="w-3 h-3 text-brand-text-muted" />
           </button>
         )}
-      </div>
+      </XCampoDeData>
 
       {/* Hint or Error */}
       {(error || editorModel.hintText) && (
