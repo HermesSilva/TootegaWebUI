@@ -29,11 +29,33 @@ export function getDateFormat(pType: 'date' | 'dateTime' | 'time' = 'date'): str
 }
 
 /**
+ * Lê o valor como `Date`, tratando a DATA PURA ("2026-12-12") como dia do CALENDÁRIO, sem fuso.
+ *
+ * O back manda `DateOnly` como "yyyy-MM-dd", e `new Date('2026-12-12')` lê isso como meia-noite em
+ * UTC: no Brasil (UTC-3) vira 21h do dia ANTERIOR, e a grade exibia o vencimento um dia antes do
+ * que está gravado (boleto e DANFE com 12/12, grade com 11/12 — 2026-11-21). Data sem hora não tem
+ * fuso a converter; monta-se no horário local, e o dia exibido é o dia gravado.
+ *
+ * O que traz hora (ISO completo) e o que já é `Date` passam intactos.
+ */
+function paraData(pValue: unknown): Date {
+  if (pValue instanceof Date)
+    return pValue;
+
+  const texto = String(pValue);
+  const pura = /^(\d{4})-(\d{2})-(\d{2})$/.exec(texto.trim());
+
+  return pura
+    ? new Date(Number(pura[1]), Number(pura[2]) - 1, Number(pura[3]))
+    : new Date(texto);
+}
+
+/**
  * Formats a date value according to the current locale
  */
 export function formatDate(pValue: unknown, pFormat?: string): string {
   try {
-    const date = pValue instanceof Date ? pValue : new Date(String(pValue));
+    const date = paraData(pValue);
 
     if (isNaN(date.getTime()))
       return String(pValue);
@@ -77,7 +99,7 @@ export function formatDate(pValue: unknown, pFormat?: string): string {
  */
 export function formatDateTime(pValue: unknown, pFormat?: string): string {
   try {
-    const date = pValue instanceof Date ? pValue : new Date(String(pValue));
+    const date = paraData(pValue);
 
     if (isNaN(date.getTime()))
       return String(pValue);

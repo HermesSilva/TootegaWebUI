@@ -49,6 +49,8 @@ export { RolePermissionsView } from './RolePermissionsView';
 // Certificate (A1) of the PLATFORM (SaaS-admin). The fiscal ones (person's certificate, batch upload,
 // replace, SEFAZ authorizer endpoints) are the ERP's and live in its App since 2026-10-23.
 export { PlatformCertificateUpload } from './PlatformCertificateUpload';
+export { CompanyRemoval } from './CompanyRemoval';
+export { CompanyRestore } from './CompanyRestore';
 
 // Button-bar Custom Action Registry
 export { XButtonActionRegistry } from './XButtonActionRegistry';
