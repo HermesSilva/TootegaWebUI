@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect, useCallback, type JSX } from 'react';
 import { createPortal } from 'react-dom';
-import { LogOut, ChevronDown, Palette, Mail, Lock, User, Building2 } from 'lucide-react';
+import { LogOut, ChevronDown, Palette, Mail, Lock, User, Building2, Headset } from 'lucide-react';
 import { useAuth, useCompany } from '@core/hooks';
 import { ThemeSelector } from './ThemeSelector';
 import { ChangeEmailModal } from './ChangeEmailModal';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { MyAccountModal } from './MyAccountModal';
 import { ZIndexManager } from '@core/lib/zIndexManager';
+import { XChamarSuporte } from '@core/components/suporte/XChamarSuporte';
+import { navegadorCompartilhaTela } from '@core/lib/suporte/conexaoDeMidia';
 
 interface AvatarProps {
   onManageDeleted?: () => void;
@@ -21,6 +23,10 @@ export function Avatar({ onManageDeleted }: AvatarProps): JSX.Element {
   const [showChangeEmailModal, setShowChangeEmailModal] = useState(false);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showMyAccountModal, setShowMyAccountModal] = useState(false);
+  const [chamandoSuporte, setChamandoSuporte] = useState(false);
+  // O suporte remoto transmite a tela, e navegador de celular não a compartilha: a opção aparece, desligada,
+  // dizendo o porquê, em vez de sumir sem explicação.
+  const compartilhaTela = navegadorCompartilhaTela();
   const [dropdownZIndex, setDropdownZIndex] = useState(0);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 });
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -151,6 +157,18 @@ export function Avatar({ onManageDeleted }: AvatarProps): JSX.Element {
             <span>{'Minha conta'}</span>
           </button>
 
+          {/* Suporte remoto: um atendente vê a tela, fala por áudio e opera esta aba. */}
+          <button
+            data-testid="menu-call-support"
+            disabled={!compartilhaTela}
+            title={compartilhaTela ? undefined : 'O suporte remoto transmite a tela, e este navegador não compartilha tela. Use um computador.'}
+            onClick={() => { setIsOpen(false); setChamandoSuporte(true); }}
+            className="dropdown-item disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <Headset size={16} className="text-brand-text-secondary" />
+            <span>{compartilhaTela ? 'Chamar suporte' : 'Chamar suporte (só no computador)'}</span>
+          </button>
+
           {/* Account Settings */}
           <div className="border-t border-border-light">
             <button
@@ -193,6 +211,7 @@ export function Avatar({ onManageDeleted }: AvatarProps): JSX.Element {
         isOpen={showChangePasswordModal} 
         onClose={() => setShowChangePasswordModal(false)} 
       />
+      <XChamarSuporte aberto={chamandoSuporte} aoFechar={() => setChamandoSuporte(false)} />
       <MyAccountModal
         isOpen={showMyAccountModal}
         onClose={() => setShowMyAccountModal(false)}

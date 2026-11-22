@@ -1,18 +1,16 @@
 /**
  * XDateEditor - Editor de Data
  * 
- * Campo de data com:
- * - Input nativo type="date" para melhor UX
- * - Suporte a data mínima e máxima
- * - Formatação localizada
+ * Campo de data do motor (`XCampoDeData`): digitação com máscara `dd/mm/aaaa` e calendário do sistema, com data
+ * mínima e máxima. O valor entregue ao formulário é a data ISO (`aaaa-mm-dd`), ou nulo quando o campo está vazio.
  */
 
-import { useCallback, useMemo, type JSX, type ChangeEvent } from 'react';
+import { useCallback, useMemo, type JSX } from 'react';
 import { Calendar, X } from 'lucide-react';
 import type { XDataEditor } from '@core/types';
 import { XEditorLabel } from './XEditorLabel';
 import { XReadOnlyValue } from './XReadOnlyValue';
-import { CLASSE_TEXTO_OCULTO, FORMATO_DATA, XPlaceholderDeData } from './XPlaceholderDeData';
+import { XCampoDeData } from './XCampoDeData';
 import { formatDate, getDateFormat } from '@core/lib';
 
 // ============================================================================
@@ -112,12 +110,8 @@ export function XDateEditor({
   // Handlers
   // ---------------------------------------------------------------------------
 
-  const handleChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
-
-    // Propaga como string ISO ou null
-    onChange(newValue || null);
-  }, [onChange]);
+  // Propaga como string ISO ou null
+  const handleChange = useCallback((pValor: string) => onChange(pValor || null), [onChange]);
 
   const handleRevert = useCallback(() => {
     const originalDate = toISODateString(originalValue);
@@ -130,7 +124,6 @@ export function XDateEditor({
 
   const originalInputValue = useMemo(() => toISODateString(originalValue), [originalValue]);
   const hasChanged = inputValue !== originalInputValue;
-  const vazio = inputValue === '';
   const showRevertButton = hasChanged && !disabled && !editorModel.isReadOnly;
 
   // ---------------------------------------------------------------------------
@@ -157,47 +150,23 @@ export function XDateEditor({
       {/* Label */}
       <XEditorLabel id={editor.id} title={editor.title} isRequired={editorModel.isRequired} />
 
-      {/* Input Container */}
-      <div className="relative">
-        {/* Calendar Icon */}
-        {calendarIcon}
-
-        {/* Input */}
-        <input
-          id={editor.id}
-          type="date"
-          value={inputValue}
-          onChange={handleChange}
-          min={minDate}
-          max={maxDate}
-          disabled={disabled || editorModel.isReadOnly}
-          className={`
-            peer w-full h-editor pl-10 ${showRevertButton ? 'pr-8' : 'pr-4'}
-            text-ui rounded-lg border
-            bg-brand-surface text-brand-text-primary
-            focus:outline-none focus:ring-2 focus:ring-brand-primary focus:border-transparent
-            disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-muted-bg
-            ${vazio ? CLASSE_TEXTO_OCULTO : ''}
-            ${error ? 'border-danger focus:ring-danger' : 'border-border'}
-          `}
-        />
-
-        {/* O formato que o produto fala, no lugar do que o navegador desenharia (dd/mm/aaaa). */}
-        <XPlaceholderDeData visivel={vazio} texto={FORMATO_DATA} />
-
+      <XCampoDeData
+        tipo="data" id={editor.id} valor={inputValue} aoMudar={handleChange}
+        minimo={minDate} maximo={maxDate} comErro={!!error} comBotaoADireita={showRevertButton}
+      >
         {/* Revert Button */}
         {showRevertButton && (
           <button
             type="button"
             onClick={handleRevert}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-hover rounded"
+            className="absolute right-9 top-1/2 -translate-y-1/2 p-1 hover:bg-hover rounded"
             tabIndex={-1}
             title={'Desfazer alteração'}
           >
             <X className="w-3 h-3 text-brand-text-muted" />
           </button>
         )}
-      </div>
+      </XCampoDeData>
 
       {/* Hint or Error */}
       {(error || editorModel.hintText) && (

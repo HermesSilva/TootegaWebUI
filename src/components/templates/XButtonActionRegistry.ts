@@ -25,6 +25,11 @@ export interface XButtonActionComponentProps {
   selectedRow?: Record<string, unknown> | null;
   /** The application model — data-driven endpoints (apiBaseURL) live here (CE-19). */
   application: XApplication;
+  /**
+   * A aba em que a App está: a ação que muda o título dela (`definirTitulo` do `useTabs`) — o atendimento de suporte
+   * põe ali o nome de quem está sendo atendido (dono, 2026-11-19). Ausente fora de uma aba.
+   */
+  tabID?: string;
 }
 
 type ButtonActionComponent = ComponentType<XButtonActionComponentProps>;

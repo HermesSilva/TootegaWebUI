@@ -13,10 +13,16 @@
  * declarado pela App (`XApplication.importResolution`), a corrida para, o modal de coleta genérico abre com aqueles
  * valores e, confirmado, o MESMO arquivo volta com o campo multipart `resolucao` (JSON do que se preencheu).
  * Fechado sem confirmar, o arquivo fica de fora, e a lista diz por quê.
+ *
+ * VÁRIOS ARQUIVOS E PACOTE (dono, 2026-11-14): a resolução só abre na importação de UM arquivo. Com vários na fila,
+ * o arquivo que pede decisão é DESCARTADO — não entra, não interrompe os demais —, e o quadro lista ao fim os
+ * identificadores descartados, para se importar cada um sozinho depois. O `.zip` é aberto pelo back
+ * (`XApplication.importArchiveEndpoint`), e os arquivos dele entram na fila como se tivessem sido escolhidos soltos:
+ * o que decide entre "um" e "vários" é quantos arquivos há para importar, não como chegaram.
  */
 
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
-import { AlertCircle, CheckCircle2, CircleSlash, FileWarning, Loader2, Sparkles, X } from 'lucide-react';
+import { AlertCircle, Ban, CheckCircle2, CircleSlash, Copy, FileWarning, Loader2, Sparkles, X } from 'lucide-react';
 
 import { api, ApiError } from '@core/lib/api';
 import type { XRowAction } from '@core/types';
@@ -32,12 +38,14 @@ import { XRowActionFormModal } from './XRowActionFormModal';
  * `assistido` = não entrou na hora: foi para a fila da IA, que classifica em segundo plano — o sino
  * avisa ao concluir. Distingui-lo de `importado` evita a mentira do "verde" para o que ainda vai rodar.
  */
-export type XImportOutcome = 'importado' | 'duplicado' | 'assistido' | 'falhou' | 'naoResolvido';
+export type XImportOutcome = 'importado' | 'duplicado' | 'assistido' | 'falhou' | 'naoResolvido' | 'descartado';
 
 export interface XImportResult {
   fileName: string;
   outcome: XImportOutcome;
   message: string;
+  /** O identificador do documento descartado (na nota, a chave de acesso), para a lista copiável do fim. */
+  identificador?: string;
 }
 
 /**
@@ -53,6 +61,13 @@ interface XImportResponse {
    * São os valores iniciais do formulário de resolução da App (`importResolution`).
    */
   resolucaoPendente?: Record<string, unknown> | null;
+  /** A frase do back que diz o que falta decidir; é o que a linha do arquivo descartado mostra. */
+  motivoPendencia?: string;
+}
+
+/** O que o endpoint que abre o pacote devolve: os arquivos de dentro dele, com o conteúdo em Base64. */
+interface XPacoteAberto {
+  arquivos?: { nome: string; conteudoBase64: string }[];
 }
 
 /** Um arquivo à espera da resolução: os valores do formulário e as marcas da última recusa do servidor. */
@@ -68,10 +83,22 @@ export interface XImportDialogProps {
   isOpen: boolean;
   /** Endpoint multipart, campo `arquivo`. Vem do modelo da App. */
   endpoint: string;
+  /**
+   * Endpoint que abre o `.zip` (`XApplication.importArchiveEndpoint`): o pacote escolhido vai a ele, e os arquivos
+   * que voltam entram na fila no lugar do pacote. Vazio ⇒ o `.zip` é enviado ao `endpoint` como um arquivo qualquer.
+   */
+  archiveEndpoint?: string;
+  /**
+   * As extensões que a importação recebe (`XApplication.importAccept`, ex.: `.xml,.zip`). O seletor do navegador só
+   * SUGERE o filtro — "Todos os arquivos" o contorna —, então o diálogo confere: o arquivo de outro tipo não é
+   * enviado e aparece no quadro como falha, dizendo o que a importação aceita. Vazio ⇒ qualquer arquivo.
+   */
+  accept?: string;
   files: File[];
   /**
-   * Formulário de RESOLUÇÃO declarado pela App (`importResolution`). Quando a resposta traz `resolucaoPendente`, a
-   * corrida para nele; confirmado, o mesmo arquivo volta com o campo `resolucao`. Nulo ⇒ a importação não pergunta.
+   * Formulário de RESOLUÇÃO declarado pela App (`importResolution`). Com UM arquivo para importar, quando a resposta
+   * traz `resolucaoPendente` a corrida para nele; confirmado, o mesmo arquivo volta com o campo `resolucao`. Com
+   * VÁRIOS, o arquivo que pede decisão é descartado e listado. Nulo ⇒ a importação não pergunta.
    */
   resolution?: XRowAction | null;
   /**
@@ -95,6 +122,33 @@ function corpoDaResolucao(pArquivo: File, pResolucao: Record<string, unknown>): 
   return corpo;
 }
 
+/** As extensões aceitas, em minúsculas e com o ponto (`.xml`); vazio quando a importação aceita qualquer arquivo. */
+function extensoesAceitas(pAccept: string | undefined): string[] {
+  return (pAccept ?? '').split(',').map((pE) => pE.trim().toLowerCase()).filter((pE) => pE.startsWith('.'));
+}
+
+/** As extensões por extenso, para a frase da recusa: ".xml e .zip". */
+function listaDeExtensoes(pExtensoes: string[]): string {
+  return pExtensoes.length <= 1
+    ? pExtensoes.join('')
+    : `${pExtensoes.slice(0, -1).join(', ')} e ${pExtensoes[pExtensoes.length - 1]}`;
+}
+
+/** O arquivo é um pacote que o back sabe abrir. */
+function ePacote(pArquivo: File): boolean {
+  return /\.zip$/i.test(pArquivo.name);
+}
+
+/** O arquivo de dentro do pacote, de volta a `File`, com o nome do pacote na frente para a lista dizer de onde veio. */
+function arquivoDoPacote(pPacote: File, pNome: string, pConteudoBase64: string): File {
+  const binario = atob(pConteudoBase64);
+  const bytes = new Uint8Array(binario.length);
+  for (let i = 0; i < binario.length; i++)
+    bytes[i] = binario.charCodeAt(i);
+
+  return new File([bytes], `${pPacote.name} › ${pNome}`);
+}
+
 /** Os erros por campo da recusa, no formato do modal de coleta (campo → frase). */
 function errosDeCampo(pErro: unknown): Record<string, string> | undefined {
   if (!(pErro instanceof ApiError) || pErro.fieldErrors.length === 0)
@@ -110,6 +164,8 @@ function errosDeCampo(pErro: unknown): Record<string, string> | undefined {
 export function XImportDialog({
   isOpen,
   endpoint,
+  archiveEndpoint,
+  accept,
   files,
   resolution,
   arquivoUnico = false,
@@ -120,6 +176,14 @@ export function XImportDialog({
   const [results, setResults] = useState<XImportResult[]>([]);
   const [current, setCurrent] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
+
+  // UM ou VÁRIOS (dono, 2026-11-14). Sem quadro = a importação de um arquivo só: véu de espera e, se faltar decisão,
+  // a resolução. Nasce do que foi escolhido e se CONFIRMA depois de abrir os pacotes — o `.zip` com um arquivo é
+  // importação única; o `.zip` com vários passa a ser corrida com quadro.
+  const [semQuadro, setSemQuadro] = useState(arquivoUnico || (!!resolution && files.length === 1));
+  const [total, setTotal] = useState(files.length);
+  const [legenda, setLegenda] = useState('');
+  const [copiado, setCopiado] = useState(false);
 
   // Cancelamento: fechar o diálogo no meio da corrida aborta o que está em voo.
   const abortRef = useRef<AbortController | null>(null);
@@ -168,13 +232,18 @@ export function XImportDialog({
     }
   }, [emAberto, endpoint, encerrarResolucao]);
 
-  const total = files.length;
   const progresso = total === 0 ? 0 : Math.round((current / total) * 100);
   const importados = results.filter((r) => r.outcome === 'importado').length;
   const duplicados = results.filter((r) => r.outcome === 'duplicado').length;
   const assistidos = results.filter((r) => r.outcome === 'assistido').length;
   const falhas = results.filter((r) => r.outcome === 'falhou').length;
   const naoResolvidos = results.filter((r) => r.outcome === 'naoResolvido').length;
+  const descartados = results.filter((r) => r.outcome === 'descartado');
+  const identificadoresDescartados = descartados.map((r) => r.identificador).filter((pId): pId is string => !!pId);
+
+  const copiarDescartados = useCallback(() => {
+    void navigator.clipboard?.writeText(identificadoresDescartados.join('\n')).then(() => setCopiado(true));
+  }, [identificadoresDescartados]);
 
   const executar = useCallback(async () => {
     const controller = new AbortController();
@@ -183,17 +252,86 @@ export function XImportDialog({
     setIsRunning(true);
     setResults([]);
     setCurrent(0);
+    setCopiado(false);
+    setSemQuadro(arquivoUnico || (!!resolution && files.length === 1));
+    setTotal(files.length);
 
     const acumulado: XImportResult[] = [];
+
+    // 1) ABRIR OS PACOTES: cada `.zip` vira os arquivos que estão dentro dele. O pacote que o back recusa (ilegível,
+    //    vazio, grande demais) fica na lista como falha, com o motivo, e os demais seguem.
+    const fila: File[] = [];
+    const aceitas = extensoesAceitas(accept);
+    let recusadosPeloTipo = 0;
 
     for (const file of files) {
       if (controller.signal.aborted)
         break;
 
+      // TIPO DE ARQUIVO (dono, 2026-11-14): o que não é do tipo que a importação recebe nem sai do navegador. A
+      // linha dele diz o que houve e o que se aceita — e os demais arquivos seguem.
+      if (aceitas.length > 0 && !aceitas.some((pE) => file.name.toLowerCase().endsWith(pE))) {
+        recusadosPeloTipo++;
+        acumulado.push({
+          fileName: file.name,
+          outcome: 'falhou',
+          message: `Arquivo não aceito: esta importação recebe apenas arquivos ${listaDeExtensoes(aceitas)}. Ele não foi enviado.`,
+        });
+        continue;
+      }
+
+      if (!archiveEndpoint || !ePacote(file)) {
+        fila.push(file);
+        continue;
+      }
+
+      setLegenda(`Abrindo ${file.name}…`);
+      try {
+        const aberto = await api.postFile<XPacoteAberto>(archiveEndpoint, file, 'arquivo', controller.signal);
+        for (const interno of aberto?.arquivos ?? [])
+          fila.push(arquivoDoPacote(file, interno.nome, interno.conteudoBase64));
+      } catch (error) {
+        acumulado.push({
+          fileName: file.name,
+          outcome: 'falhou',
+          message: error instanceof ApiError ? error.message : String(error),
+        });
+      }
+    }
+
+    // 2) UM OU VÁRIOS, agora que se sabe quantos arquivos há de fato. Só a importação única pergunta.
+    //    Arquivo recusado pelo tipo SEMPRE abre o quadro: ninguém mais diria ao usuário por que nada aconteceu.
+    const unico = recusadosPeloTipo === 0
+      && (arquivoUnico || (!!resolution && fila.length + acumulado.length <= 1));
+    setSemQuadro(unico);
+    setTotal(fila.length + acumulado.length);
+    setResults([...acumulado]);
+    setCurrent(acumulado.length);
+
+    for (const file of fila) {
+      if (controller.signal.aborted)
+        break;
+
+      setLegenda(`Importando ${file.name}…`);
       try {
         let resposta = await api.postFile<XImportResponse>(endpoint, file, 'arquivo', controller.signal);
 
-        // O arquivo não entrou: falta uma escolha do usuário. A corrida PARA aqui até o modal de resolução
+        // VÁRIOS ARQUIVOS: o que pede decisão é DESCARTADO (dono, 2026-11-14). Parar a corrida para perguntar
+        // sobre um arquivo seguraria todos os outros; ele fica de fora inteiro, com o identificador na lista do fim.
+        if (resposta?.resolucaoPendente && resolution && !unico) {
+          acumulado.push({
+            fileName: file.name,
+            outcome: 'descartado',
+            message: resposta.motivoPendencia
+              || `Descartado: o arquivo pede uma escolha em "${resolution.formTitle || resolution.title}". Importe-o sozinho.`,
+            identificador: resposta.chaveAcesso || undefined,
+          });
+          setResults([...acumulado]);
+          setCurrent(acumulado.length);
+          continue;
+        }
+
+        // UM ARQUIVO: falta uma escolha do usuário. A corrida PARA aqui até o modal de resolução
         // confirmar (o arquivo volta e entra) ou fechar (o arquivo fica de fora, e diz-se por quê).
         if (resposta?.resolucaoPendente && resolution) {
           const resolvida = await aguardarResolucao(file, resposta.resolucaoPendente);
@@ -238,9 +376,9 @@ export function XImportDialog({
       onFinished(entraram);
 
     // Arquivo único: não há quadro para ler o desfecho — terminou, fecha. A falha já foi dita no aviso de erro.
-    if (arquivoUnico && !controller.signal.aborted)
+    if (unico && !controller.signal.aborted)
       onClose();
-  }, [endpoint, files, onFinished, onClose, arquivoUnico, resolution, aguardarResolucao]);
+  }, [endpoint, archiveEndpoint, accept, files, onFinished, onClose, arquivoUnico, resolution, aguardarResolucao]);
 
   useEffect(() => {
     if (isOpen && files.length > 0)
@@ -266,8 +404,8 @@ export function XImportDialog({
     {/* `absolute`, não `fixed`: o diálogo pertence à área da App (o contêiner relative do
         XApplicationView), como o XFormModal — não à janela inteira. Escurecer o cabeçalho e o menu
         sugere que o sistema todo parou, quando quem está ocupado é só esta App.
-        ARQUIVO ÚNICO não desenha este quadro (ver `arquivoUnico`). */}
-    {!arquivoUnico && (
+        A importação de UM arquivo não desenha este quadro (ver `semQuadro`). */}
+    {!semQuadro && (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       {/* ALTURA MEDIDA CONTRA O PAI, não contra a janela (dono, 2026-09-20). Era `max-h-[80vh]`, e
           `vh` é a VIEWPORT — 80% da janela inteira, enquanto o quadro deste diálogo é a área do App,
@@ -342,7 +480,43 @@ export function XImportDialog({
                 <CircleSlash size={16} /> {`${naoResolvidos} não importados`}
               </span>
             )}
+            {descartados.length > 0 && (
+              <span className="flex items-center gap-1 text-warning"
+                data-testid="import-descartados" data-valor={descartados.length}>
+                <Ban size={16} /> {`${descartados.length} descartados`}
+              </span>
+            )}
           </div>
+
+          {/* OS DESCARTADOS (dono, 2026-11-14): o que pediu uma decisão não entrou. A lista dos identificadores fica
+              à mão — e copiável — para se importar cada um sozinho depois, respondendo ao que ele pede. */}
+          {descartados.length > 0 && !isRunning && (
+            <div
+              className="rounded-lg border border-warning/40 bg-warning-bg px-3 py-2 text-sm text-brand-text-primary"
+              data-testid="import-lista-descartados"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <span>
+                  {`${descartados.length} arquivo(s) não entraram porque pedem uma escolha sua. Importe cada um sozinho para responder.`}
+                </span>
+                {identificadoresDescartados.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={copiarDescartados}
+                    data-testid="import-copiar-descartados"
+                    className="flex shrink-0 items-center gap-1 rounded border border-border bg-brand-surface px-2 py-1 text-xs font-medium hover:bg-hover"
+                  >
+                    <Copy size={14} /> {copiado ? 'Copiado' : 'Copiar lista'}
+                  </button>
+                )}
+              </div>
+              {identificadoresDescartados.length > 0 && (
+                <ul className="mt-2 max-h-24 overflow-y-auto font-mono text-xs">
+                  {identificadoresDescartados.map((pId) => <li key={pId} className="select-all">{pId}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
 
           {/* Mensagem da IA: aparece só quando ao menos um arquivo entrou no fluxo assistido. Não é erro
               nem sucesso de importação — é aviso de que o trabalho continua em segundo plano (CE-20/21). */}
@@ -362,20 +536,28 @@ export function XImportDialog({
             rolar. Com ele, a lista cede, o rodapé (onde estão os botões) fica visível e o excedente
             vira rolagem, que é onde o excedente deve ir. */}
         <ul className="min-h-0 flex-1 overflow-y-auto border-t border-border px-6 py-2">
-          {results.map((resultado) => (
+          {results.map((resultado, pIndice) => (
             <li
-              key={resultado.fileName}
+              // Pelo índice: o mesmo nome de arquivo pode vir de dois pacotes.
+              key={pIndice}
               className="flex items-start gap-2 border-b border-border-light py-2 text-sm last:border-0"
             >
               {resultado.outcome === 'importado' && <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-success" />}
               {resultado.outcome === 'duplicado' && <FileWarning size={16} className="mt-0.5 shrink-0 text-warning" />}
               {resultado.outcome === 'falhou' && <AlertCircle size={16} className="mt-0.5 shrink-0 text-danger" />}
               {resultado.outcome === 'naoResolvido' && <CircleSlash size={16} className="mt-0.5 shrink-0 text-warning" />}
+              {resultado.outcome === 'descartado' && <Ban size={16} className="mt-0.5 shrink-0 text-warning" />}
 
               <div className="min-w-0">
                 <p className="truncate font-medium text-brand-text-primary">{resultado.fileName}</p>
                 {resultado.message && (
-                  <p className="truncate text-xs text-brand-text-muted">{resultado.message}</p>
+                  // O motivo da falha ou do descarte é uma frase inteira, que orienta: quebra linha em vez de cortar.
+                  <p className={`text-xs text-brand-text-muted ${resultado.outcome === 'falhou' || resultado.outcome === 'descartado' ? 'break-words' : 'truncate'}`}>
+                    {resultado.message}
+                  </p>
+                )}
+                {resultado.identificador && (
+                  <p className="truncate font-mono text-xs text-brand-text-muted">{resultado.identificador}</p>
                 )}
               </div>
             </li>
@@ -386,7 +568,7 @@ export function XImportDialog({
           {isRunning && (
             <span className="mr-auto flex items-center gap-2 text-sm text-brand-text-secondary">
               <Loader2 size={16} className="animate-spin" />
-              {'Importando…'}
+              {legenda.startsWith('Abrindo') ? legenda : 'Importando…'}
             </span>
           )}
           <button
@@ -410,7 +592,7 @@ export function XImportDialog({
         disputavam o mesmo documento. O véu cobre a área da App (não a janela) enquanto o arquivo está em voo —
         diz o que está acontecendo e impede o segundo envio. Some quando a resolução abre: aí quem fala é o
         formulário dela, que tem o próprio indicador ao confirmar. */}
-    {arquivoUnico && isRunning && !emAberto && (
+    {semQuadro && isRunning && !emAberto && (
       <div
         className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/30 backdrop-blur-[1px]"
         role="status"
@@ -418,7 +600,7 @@ export function XImportDialog({
         data-testid="import-ocupado"
       >
         <Loader2 className="h-10 w-10 animate-spin text-brand-primary" />
-        <span className="text-ui text-white/90">{`Importando ${files[0]?.name ?? 'o arquivo'}…`}</span>
+        <span className="text-ui text-white/90">{legenda || `Importando ${files[0]?.name ?? 'o arquivo'}…`}</span>
       </div>
     )}
 

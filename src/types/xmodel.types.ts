@@ -430,6 +430,17 @@ export interface XDataField extends XModel {
   isResizable: boolean;
   isFixed: boolean;
   nullText: string;
+  /**
+   * Campo do CONTEXTO da consulta (`dataView.contextEndpoint`) que decide se a coluna EXISTE na grade principal:
+   * verdadeiro ⇒ aparece; falso ou ausente ⇒ some, com cabeçalho e tudo, e sai do diálogo de exportação.
+   * Vazio ⇒ sempre visível. Mesmo contrato do `visibleWhenField` da grade de itens.
+   */
+  visibleWhenField?: string;
+  /**
+   * O texto da coluna aparece INTEIRO, quebrando em mais de uma linha, em vez de cortado com reticências.
+   * Ausente/falso ⇒ a célula de uma linha só.
+   */
+  wrapText?: boolean;
 }
 
 // ============================================================================
@@ -622,6 +633,11 @@ export interface XUIEditorModel extends XModel {
    */
   pickerMultiSelect?: boolean;
   /**
+   * Campo do formulário que, verdadeiro, deixa o seletor da grade incluir um registro que já está em outra
+   * linha. Vazio (o padrão): o repetido se ignora.
+   */
+  pickerAllowDuplicatesWhenField?: string;
+  /**
    * O que o picker leva do FORMULÁRIO como filtro fixo (dono, 2026-10-17): cada vínculo copia o valor
    * corrente do campo `sourceField` do formulário para a chave `targetField` de `filters`, em toda
    * busca do diálogo e nas opções dos critérios combinados. Campo vazio não vira filtro. Nasceu na
@@ -725,6 +741,10 @@ export interface XUIGridColumn {
    * linha. Vazio ⇒ não depende da linha. Soma-se às demais travas.
    */
   editableWhenRowField?: string;
+  /** A célula só-leitura de texto quebra linha em vez de cortar com reticências. */
+  wrapText?: boolean;
+  /** Largura mínima da coluna, em pixels; a grade rola de lado quando o espaço não comporta todas. */
+  minWidth?: number;
   /** A célula EDITÁVEL tem de estar preenchida: o modal de coleta marca a linha vazia e não confirma. */
   isRequired?: boolean;
   /**
@@ -1058,6 +1078,11 @@ export interface XDataView extends XModel {
   pagination: XPagination;
   dataEndpoint: string;
   keyField: string;
+  /**
+   * GET do CONTEXTO da consulta: valores que não são de nenhuma linha, mas mudam como a grade se apresenta — a
+   * configuração da empresa que liga uma coluna (`XDataField.visibleWhenField`). Buscado quando a App abre.
+   */
+  contextEndpoint?: string;
   showHeader: boolean;
   showFooter: boolean;
   showBorder: boolean;
@@ -1091,6 +1116,14 @@ export interface XRowAction extends XModel {
   title: string;
   icon: string;
   endpoint: string;
+  /**
+   * A ação EXPORTA o registro da linha pelo diálogo de exportação (formato, registros, orientação, colunas):
+   * o motor abre o `XExportDialog` com esta configuração e posta o pedido no `endpoint`, baixando o arquivo.
+   * Ausente/nula ⇒ a ação não exporta por diálogo.
+   */
+  exportConfig?: XExportConfig | null;
+  /** Campo da linha com o total de registros da exportação (os itens do documento). */
+  exportCountField?: string;
   /**
    * A ação LEVA O AppX ao nível com esta chave, com a linha como registro (o "Abrir" do repositório na aba Código).
    * Nada se posta; fora de um AppX, ou com o nível podado, o botão não aparece.
@@ -1208,6 +1241,15 @@ export interface XApplication extends XModel {
   /** A importação recebe UM arquivo por vez: o seletor não deixa escolher vários. */
   importSingleFile?: boolean;
   /**
+   * Endpoint que ABRE um pacote `.zip` escolhido na importação: recebe o pacote (multipart, campo `arquivo`) e
+   * devolve `{ arquivos: [{ nome, conteudoBase64 }] }`; cada arquivo segue então ao `importEndpoint`, um por
+   * requisição. Vazio ⇒ o `.zip` é enviado como um arquivo qualquer.
+   */
+  importArchiveEndpoint?: string;
+  /** Extensões que o seletor de arquivos oferece (ex.: `.xml,.zip`). Vazio ⇒ qualquer arquivo. */
+  importAccept?: string;
+  /**
+   * Só se abre na importação de UM arquivo: com vários na fila, o arquivo que pede decisão é descartado e listado.
    * Formulário que resolve o que a importação não decide sozinha: a resposta traz `resolucaoPendente`, o motor abre
    * este modal de coleta com aqueles valores e, ao confirmar, reenvia o mesmo arquivo com o campo multipart
    * `resolucao` (JSON do que se preencheu). Nulo ⇒ a importação não pergunta nada.
