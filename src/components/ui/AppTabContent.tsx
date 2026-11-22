@@ -58,6 +58,7 @@ export function AppTabContent({ tab, onClose }: AppTabContentProps): JSX.Element
       onClose={onClose}
       filtroInicial={tab.filtroInicial}
       registroInicial={tab.registroInicial}
+      acaoPedida={tab.acaoPedida}
     />
   );
 }

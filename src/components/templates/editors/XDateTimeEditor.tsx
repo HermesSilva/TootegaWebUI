@@ -1,16 +1,15 @@
 /**
  * XDateTimeEditor - Editor de Data e Hora
  * 
- * Campo de data/hora com:
- * - Input nativo type="datetime-local" para melhor UX
- * - Suporte a data/hora mínima e máxima
+ * Campo de data e hora do motor (`XCampoDeData`): digitação com máscara `dd/mm/aaaa hh:mm`, calendário e escolha de
+ * hora do sistema, com mínimo e máximo. O valor entregue ao formulário é o instante ISO, ou nulo quando vazio.
  */
 
-import { useCallback, useMemo, type JSX, type ChangeEvent } from 'react';
+import { useCallback, useMemo, type JSX } from 'react';
 import { Calendar } from 'lucide-react';
 import type { XDataEditor } from '@core/types';
 import { XEditorLabel } from './XEditorLabel';
-import { CLASSE_TEXTO_OCULTO, FORMATO_DATA_HORA, XPlaceholderDeData } from './XPlaceholderDeData';
+import { XCampoDeData } from './XCampoDeData';
 import { XReadOnlyValue } from './XReadOnlyValue';
 import { formatDateTime, getDateFormat } from '@core/lib';
 
@@ -120,9 +119,7 @@ export function XDateTimeEditor({
   // Handlers
   // ---------------------------------------------------------------------------
 
-  const handleChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
-
+  const handleChange = useCallback((newValue: string) => {
     // Converte para ISO com timezone
     if (newValue) {
       const date = new Date(newValue);
@@ -156,34 +153,10 @@ export function XDateTimeEditor({
       {/* Label */}
       <XEditorLabel id={editor.id} title={editor.title} isRequired={editorModel.isRequired} />
 
-      {/* Input Container */}
-      <div className="relative">
-        {/* Calendar Icon */}
-        {calendarIcon}
-
-        {/* Input */}
-        <input
-          id={editor.id}
-          type="datetime-local"
-          value={inputValue}
-          onChange={handleChange}
-          min={minDateTime}
-          max={maxDateTime}
-          disabled={disabled || editorModel.isReadOnly}
-          className={`
-            peer w-full h-editor pl-10 pr-4
-            text-ui rounded-lg border
-            bg-brand-surface text-brand-text-primary
-            focus:outline-none focus:ring-2 focus:ring-brand-primary focus:border-transparent
-            disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-muted-bg
-            ${inputValue === '' ? CLASSE_TEXTO_OCULTO : ''}
-            ${error ? 'border-danger focus:ring-danger' : 'border-border'}
-          `}
-        />
-
-        {/* O formato que o produto fala, no lugar do que o navegador desenharia. */}
-        <XPlaceholderDeData visivel={inputValue === ''} texto={FORMATO_DATA_HORA} />
-      </div>
+      <XCampoDeData
+        tipo="dataHora" id={editor.id} valor={inputValue} aoMudar={handleChange}
+        minimo={minDateTime} maximo={maxDateTime} comErro={!!error}
+      />
 
       {/* Hint or Error */}
       {(error || editorModel.hintText) && (

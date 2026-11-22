@@ -4,6 +4,7 @@ import { AppTabBar, Avatar, Logo, SystemInfoModal, IconButton, CompanyLogo, Sino
 import { useSidebar, useCompany, useSiteConfig } from '@core/hooks';
 import { TabsContext } from '@core/contexts/TabsContext';
 import { PainelJaci } from '@core/components/jaci';
+import { XAvisoDeChamadas } from '@core/components/suporte/XAvisoDeChamadas';
 
 interface HeaderProps {
   onManageDeleted?: () => void;
@@ -80,6 +81,7 @@ export function Header({ onManageDeleted }: HeaderProps): JSX.Element {
 
           {/* Ajuda (a Jaci, ADR-0007), sino, avatar e o botão de expandir. O manual continua a um clique — dentro do painel. */}
           <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+            <XAvisoDeChamadas />
             <PainelJaci />
             <SinoMensagens />
             <Avatar onManageDeleted={onManageDeleted} />
